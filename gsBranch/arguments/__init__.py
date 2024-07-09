@@ -14,9 +14,15 @@ import sys
 import os
 
 class GroupParams:
+    # 这是一个空类，作为参数组的容器。
     pass
 
 class ParamGroup:
+    '''
+    ParamGroup类用于将参数添加到ArgumentParser的一个参数组中。
+    __init__方法会根据类的属性自动生成命令行参数，属性名以_开头的会生成简写参数。
+    extract方法则将解析后的参数提取到GroupParams实例中。
+    '''
     def __init__(self, parser: ArgumentParser, name : str, fill_none = False):
         group = parser.add_argument_group(name)
         for key, value in vars(self).items():
@@ -44,7 +50,12 @@ class ParamGroup:
                 setattr(group, arg[0], arg[1])
         return group
 
-class ModelParams(ParamGroup): 
+class ModelParams(ParamGroup):
+    '''
+    ModelParams类继承自ParamGroup，定义了一组与模型加载相关的参数。
+    __init__方法初始化了这些参数并调用父类的构造函数生成命令行参数。
+    extract方法在提取参数后，将source_path转换为绝对路径。
+    '''
     def __init__(self, parser, sentinel=False):
         self.sh_degree = 3
         self._source_path = ""
@@ -62,6 +73,9 @@ class ModelParams(ParamGroup):
         return g
 
 class PipelineParams(ParamGroup):
+    '''
+    PipelineParams类定义了一组与流水线处理相关的参数。
+    '''
     def __init__(self, parser):
         self.convert_SHs_python = False
         self.compute_cov3D_python = False
@@ -69,6 +83,9 @@ class PipelineParams(ParamGroup):
         super().__init__(parser, "Pipeline Parameters")
 
 class OptimizationParams(ParamGroup):
+    '''
+    OptimizationParams类定义了一组与优化相关的参数。
+    '''
     def __init__(self, parser):
         self.iterations = 30_000
         self.position_lr_init = 0.00016
@@ -90,6 +107,13 @@ class OptimizationParams(ParamGroup):
         super().__init__(parser, "Optimization Parameters")
 
 def get_combined_args(parser : ArgumentParser):
+    '''
+    get_combined_args函数从命令行和配置文件中读取参数并合并。
+    它首先解析命令行参数，然后尝试从指定路径读取配置文件中的参数，
+    最后将命令行参数覆盖配置文件中的参数，返回合并后的参数集合。
+    :param parser:
+    :return:
+    '''
     cmdlne_string = sys.argv[1:]
     cfgfile_string = "Namespace()"
     args_cmdline = parser.parse_args(cmdlne_string)
@@ -109,4 +133,11 @@ def get_combined_args(parser : ArgumentParser):
     for k,v in vars(args_cmdline).items():
         if v != None:
             merged_dict[k] = v
+    '''
+    argparse.Namespace 是 argparse 模块中的一个类，用于存储解析后的命令行参数。
+    它类似于一个简单的对象，可以通过属性访问存储的参数值。
+
+    在 argparse 模块中，当你调用 parse_args 方法解析命令行参数时，
+    它会返回一个 Namespace 对象，里面包含所有解析后的参数
+    '''
     return Namespace(**merged_dict)
