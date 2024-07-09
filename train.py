@@ -1,0 +1,1 @@
+import argparsedef training():# 应该通过sfm首先初始化点云，这个点云用作3dgs的训练    # 两个网络先分开训练，然后在一些时候进行一个对另一个的指导，然后再在某个时候，反过来指导一次if __name__ == "__main__":    # 首先读取argumentss    # 通过argparse这个lib来进行处理    parser =
