@@ -1,10 +1,10 @@
 
 
 
-def gs_process():
+def gs_backward():
     pass
 
-def udf_process():
+def udf_backward():
     pass
 
 def udf_guide_gs():

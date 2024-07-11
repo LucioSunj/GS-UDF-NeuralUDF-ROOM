@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from models.projector_utils import sample_ptsFeatures_from_featureMaps
+from udfBranch.models.projector_utils import sample_ptsFeatures_from_featureMaps
 
 
 class PatchProjector():

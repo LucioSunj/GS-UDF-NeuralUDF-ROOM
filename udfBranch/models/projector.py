@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-from models.projector_utils import cam2pixel
+from udfBranch.models.projector_utils import cam2pixel
 
 
 class Projector():

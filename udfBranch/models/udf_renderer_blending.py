@@ -3,14 +3,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import logging
-import mcubes
+# import pymcubes as mcubes # 这里源码是import mcubes
 from icecream import ic
 import skimage.measure
 import pdb
 
-from models.patch_projector import PatchProjector
+from udfBranch.models.patch_projector import PatchProjector
 
-from models.fields import color_blend
+from udfBranch.models.fields import color_blend
 
 
 def extract_fields(bound_min, bound_max, resolution, query_func, device):
@@ -48,19 +48,23 @@ def extract_gradient_fields(bound_min, bound_max, resolution, query_func, device
                 u[xi * N: xi * N + len(xs), yi * N: yi * N + len(ys), zi * N: zi * N + len(zs)] = val
     return u
 
-
-def extract_geometry(bound_min, bound_max, resolution, threshold, query_func, device):
-    print('threshold: {}'.format(threshold))
-    u = extract_fields(bound_min, bound_max, resolution, query_func, device)
-
-    vertices, triangles = mcubes.marching_cubes(u, threshold)
-    # vertices, triangles, normals, values = skimage.measure.marching_cubes(u, threshold)
-
-    b_max_np = bound_max.detach().cpu().numpy()
-    b_min_np = bound_min.detach().cpu().numpy()
-
-    vertices = vertices / (resolution - 1.0) * (b_max_np - b_min_np)[None, :] + b_min_np[None, :]
-    return vertices, triangles
+'''
+由于版本冲突，mcubes无法与python 3.7兼容
+我们暂时不要mcubes
+'''
+# TODO 解决版本兼容问题，或者换种方式解决mcubes实现的功能
+# def extract_geometry(bound_min, bound_max, resolution, threshold, query_func, device):
+#     print('threshold: {}'.format(threshold))
+#     u = extract_fields(bound_min, bound_max, resolution, query_func, device)
+#
+#     vertices, triangles = mcubes.marching_cubes(u, threshold)
+#     # vertices, triangles, normals, values = skimage.measure.marching_cubes(u, threshold)
+#
+#     b_max_np = bound_max.detach().cpu().numpy()
+#     b_min_np = bound_min.detach().cpu().numpy()
+#
+#     vertices = vertices / (resolution - 1.0) * (b_max_np - b_min_np)[None, :] + b_min_np[None, :]
+#     return vertices, triangles
 
 
 def sample_pdf(bins, weights, n_samples, det=False):
@@ -754,10 +758,10 @@ class UDFRendererBlending:
 
         return z_vals
 
-    def extract_geometry(self, bound_min, bound_max, resolution, threshold=0.01, device='cpu'):
-        ret = extract_geometry(bound_min, bound_max, resolution, threshold,
-                               lambda pts: self.udf_network.udf(pts)[:, 0], device)
-        return ret
+    # def extract_geometry(self, bound_min, bound_max, resolution, threshold=0.01, device='cpu'):
+    #     ret = extract_geometry(bound_min, bound_max, resolution, threshold,
+    #                            lambda pts: self.udf_network.udf(pts)[:, 0], device)
+    #     return ret
 
     @torch.no_grad()
     def importance_sample_mix(self, rays_o, rays_d, z_vals, sample_dist):
