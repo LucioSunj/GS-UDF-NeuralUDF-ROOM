@@ -15,6 +15,9 @@ from argparse import ArgumentParser
 import shutil
 
 # This Python script is based on the shell converter script provided in the MipNerF 360 repository.
+# 用于将图片视频文件转换成 COLMAP 可以操作的文件格式
+
+# 这部分解析命令行参数，并设置COLMAP和ImageMagick命令
 parser = ArgumentParser("Colmap converter")
 parser.add_argument("--no_gpu", action='store_true')
 parser.add_argument("--skip_matching", action='store_true')
@@ -28,10 +31,12 @@ colmap_command = '"{}"'.format(args.colmap_executable) if len(args.colmap_execut
 magick_command = '"{}"'.format(args.magick_executable) if len(args.magick_executable) > 0 else "magick"
 use_gpu = 1 if not args.no_gpu else 0
 
+
 if not args.skip_matching:
     os.makedirs(args.source_path + "/distorted/sparse", exist_ok=True)
 
     ## Feature extraction
+    ## 这段代码构造并执行特征提取的命令
     feat_extracton_cmd = colmap_command + " feature_extractor "\
         "--database_path " + args.source_path + "/distorted/database.db \
         --image_path " + args.source_path + "/input \
@@ -44,6 +49,7 @@ if not args.skip_matching:
         exit(exit_code)
 
     ## Feature matching
+    ## 这段代码构造并执行特征匹配的命令
     feat_matching_cmd = colmap_command + " exhaustive_matcher \
         --database_path " + args.source_path + "/distorted/database.db \
         --SiftMatching.use_gpu " + str(use_gpu)
@@ -53,6 +59,7 @@ if not args.skip_matching:
         exit(exit_code)
 
     ### Bundle adjustment
+    ### 这段代码构造并执行全局优化的命令
     # The default Mapper tolerance is unnecessarily large,
     # decreasing it speeds up bundle adjustment steps.
     mapper_cmd = (colmap_command + " mapper \
@@ -67,6 +74,7 @@ if not args.skip_matching:
 
 ### Image undistortion
 ## We need to undistort our images into ideal pinhole intrinsics.
+# 这段代码构造并执行图像去畸变的命令
 img_undist_cmd = (colmap_command + " image_undistorter \
     --image_path " + args.source_path + "/input \
     --input_path " + args.source_path + "/distorted/sparse/0 \
@@ -77,6 +85,7 @@ if exit_code != 0:
     logging.error(f"Mapper failed with code {exit_code}. Exiting.")
     exit(exit_code)
 
+# 这段代码将稀疏重建数据移动到统一的目录中
 files = os.listdir(args.source_path + "/sparse")
 os.makedirs(args.source_path + "/sparse/0", exist_ok=True)
 # Copy each file from the source directory to the destination directory
@@ -87,6 +96,7 @@ for file in files:
     destination_file = os.path.join(args.source_path, "sparse", "0", file)
     shutil.move(source_file, destination_file)
 
+# 这段代码实现了图像调整大小的功能，将原始图像分别调整为50%，25%和12.5%的尺寸
 if(args.resize):
     print("Copying and resizing...")
 
