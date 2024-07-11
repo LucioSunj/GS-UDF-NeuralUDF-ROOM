@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from models.embedder import get_embedder
+from udfBranch.models.embedder import get_embedder
 from termcolor import colored
 
 
