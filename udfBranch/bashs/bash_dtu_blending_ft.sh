@@ -1,4 +1,6 @@
 #!/bin/bash
+# usage函数是一个辅助函数，主要用于在用户提供的命令行参数不正确或不符合预期时，向用户显示脚本的正确用法。
+# 这个函数帮助用户理解如何正确使用脚本，并确保脚本在参数错误的情况下不会继续执行，从而避免可能的错误或意外行为
 usage() {
   echo "Usage: ${0} [-g|--gpu] [-c|--case]  [-lr|--learning_rate]  [-lr_geo|--learning_rate_geo]"  1>&2
   exit 1
