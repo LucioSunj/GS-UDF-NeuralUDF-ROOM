@@ -10,4 +10,5 @@ os.environ['CFLAGS'] = includes_numpy + (os.environ['CFLAGS'] if 'CFLAGS' in os.
 setup(
     name="My MC",
     ext_modules=cythonize("_marching_cubes_lewiner_cy.pyx", include_path=[np.get_include()], language="c++"),
+    include_dirs=[np.get_include()]
 )
