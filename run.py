@@ -17,4 +17,7 @@ if __name__ == '__main__':
 
     # unclosed objects for udf
     subprocess.run('bash bashes/running_gs_ggbond-ne-udf_garment.sh --gpu 0 --case scan320 -s 0.001',text=True)
-    subprocess.run('bash bashes/running_gs_ggbond-ne-udf_garment_ft.sh --gpu 0 --case scan320 -s 0.001',text=True)
+    # subprocess.run('bash bashes/running_gs_ggbond-ne-udf_garment_ft.sh --gpu 0 --case scan320 -s 0.001',text=True)
+    # 或者直接调用这个脚本
+    #  python train.py --udf_gpu 0 --udf_case scan118 -s data/GS-Branch/ggbond --udf_conf udfBranch/confs/udf_garment_blending.conf --udf_threshold 0.005 --udf_resolution 128 --udf_vis_ray --udf_reg_weights_schedule --udf_sparse_weight 0.001
+    # python train.py --udf_gpu 0 --udf_case scan118 -s data/GS-Branch/ggbond --udf_conf udfBranch/confs/udf_garment_blending_ft.conf --udf_threshold 0.005 --udf_resolution 128 --udf_vis_ray --udf_reg_weights_schedule --udf_sparse_weight 0.001

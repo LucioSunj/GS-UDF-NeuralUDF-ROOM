@@ -3,7 +3,7 @@
 
 # usage函数是一个辅助函数，主要用于在用户提供的命令行参数不正确或不符合预期时，向用户显示脚本的正确用法。
 # 这个函数帮助用户理解如何正确使用脚本，并确保脚本在参数错误的情况下不会继续执行，从而避免可能的错误或意外行为
-#!/bin/bash
+
 usage() {
   echo "Usage: ${0} [-g|--gpu] [-c|--case] [-s|--sparse_weight]  [-lr|--learning_rate]  [-lr_geo|--learning_rate_geo]"  1>&2
   exit 1
@@ -38,5 +38,5 @@ while [[ $# -gt 0 ]];do
   esac
 done
 
-CUDA_VISIBLE_DEVICES=${GPU} python train.py -s ./data/GS-Branch/ggbond --conf ./udfBranch/confs/udf_garment_blending.conf \
+CUDA_VISIBLE_DEVICES=${GPU} C:\Users\wangz\anaconda3\envs\gaussian_splatting\python.exe E:\Projects\GS-NeuralUDF-room\train.py -s ../data/GS-Branch/ggbond --conf ../udfBranch/confs/udf_garment_blending.conf \
 --case ${CASE} --threshold 0.005 --resolution 128 --vis_ray --reg_weights_schedule --sparse_weight ${SPARSE_WEIGHT}

@@ -125,6 +125,8 @@ class UDFNetwork(nn.Module):
                  geometric_init=True,
                  weight_norm=True,
                  udf_type='abs',
+                 udf_shift=0,
+                 predict_grad=False
                  ):
         super(UDFNetwork, self).__init__()
 

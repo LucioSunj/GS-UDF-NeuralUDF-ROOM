@@ -37,5 +37,5 @@ while [[ $# -gt 0 ]];do
   esac
 done
 
-CUDA_VISIBLE_DEVICES=${GPU} python train.py -s ./data/GS-Branch/ggbond --conf ./udfBranch/confs/udf_garment_blending_ft.conf \
+CUDA_VISIBLE_DEVICES=${GPU} C:\Users\wangz\anaconda3\envs\gaussian_splatting\python.exe E:\Projects\GS-NeuralUDF-room\train.py -s ../data/GS-Branch/ggbond --conf ../udfBranch/confs/udf_garment_blending_ft.conf \
 --case ${CASE} --threshold 0.005 --resolution 128 --vis_ray  --is_continue --is_finetune   --sparse_weight ${SPARSE_WEIGHT}
