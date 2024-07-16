@@ -295,6 +295,7 @@ class UDFRendererBlending:
         # 检查是否是最后一次采样
         if not last:
             # 通过UDF网络计算新采样点的udf值
+            # 将计算的新采样点位置 pts 输入 UDF 网络 ( udf_network )，获得相应的新UDF值，并调整输出的形状，使其与其他数据对齐
             new_udf_output = self.udf_network(pts.reshape(-1, 3))
             new_udf_output = new_udf_output.reshape(batch_size, n_importance, -1)
             new_udf = new_udf_output[:, :, 0]
