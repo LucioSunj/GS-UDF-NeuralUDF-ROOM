@@ -262,23 +262,52 @@ class UDFRendererBlending:
             'weights': weights,
         }
 
-
     def cat_z_vals(self, rays_o, rays_d, z_vals, new_z_vals, udf, net_gradients=None, last=False):
+        """
+        合并原始和新采样点的z值，并更新相应的udf值。
+
+        参数:
+        rays_o: 光源方向向量，形状为(batch_size, 3)。
+        rays_d: 射线方向向量，形状为(batch_size, 3)。
+        z_vals: 原始采样位置，形状为(batch_size, n_samples)。
+        new_z_vals: 新采样位置，形状为(batch_size, n_importance)。
+        udf: 原始采样点的单层透明度估计，形状为(batch_size, n_samples)。
+        net_gradients: 神经网络的梯度（未使用）。
+        last: 是否是最后一次采样标志。
+
+        返回:
+        z_vals: 合并并排序后的z值，形状为(batch_size, n_samples + n_importance)。
+        udf: 合并并排序后的udf值，形状为(batch_size, n_samples + n_importance)。
+        """
+        # 获取批量大小和采样点数量
         batch_size, n_samples = z_vals.shape
+        # 获取新重要采样点的数量
         _, n_importance = new_z_vals.shape
+
+        # 计算新采样点的位置
         pts = rays_o[:, None, :] + rays_d[:, None, :] * new_z_vals[..., :, None]
+
+        # 将原始采样位置和新采样位置合并
         z_vals = torch.cat([z_vals, new_z_vals], dim=-1)
+        # 对合并后的z值进行排序，并获取排序后的索引
         z_vals, index = torch.sort(z_vals, dim=-1)
 
+        # 检查是否是最后一次采样
         if not last:
+            # 通过UDF网络计算新采样点的udf值
             new_udf_output = self.udf_network(pts.reshape(-1, 3))
             new_udf_output = new_udf_output.reshape(batch_size, n_importance, -1)
             new_udf = new_udf_output[:, :, 0]
+
+            # 将原始udf值和新udf值合并
             udf = torch.cat([udf, new_udf], dim=-1)
+
+            # 获取展开的索引，便于根据排序后的索引重新排序udf
             xx = torch.arange(batch_size)[:, None].expand(batch_size, n_samples + n_importance).reshape(-1)
             index = index.reshape(-1)
             udf = udf[(xx, index)].reshape(batch_size, n_samples + n_importance)
 
+        # 返回合并并排序后的z值和udf值
         return z_vals, udf
 
     def sdf2alpha(self, sdf, true_cos, dists, inv_s, cos_anneal_ratio=None, udf_eps=None):
