@@ -49,7 +49,12 @@ def extract_gradient_fields(bound_min, bound_max, resolution, query_func, device
                 u[xi * N: xi * N + len(xs), yi * N: yi * N + len(ys), zi * N: zi * N + len(zs)] = val
     return u
 
-
+'''
+由于版本冲突，mcubes无法与python 3.7兼容
+我们暂时不要mcubes
+'''
+# TODO 解决版本兼容问题，或者换种方式解决mcubes实现的功能
+# 这里问题在于：mcubes需要3.8的python
 def extract_geometry(bound_min, bound_max, resolution, threshold, query_func, device):
     print('threshold: {}'.format(threshold))
     u = extract_fields(bound_min, bound_max, resolution, query_func, device)
@@ -64,90 +69,44 @@ def extract_geometry(bound_min, bound_max, resolution, threshold, query_func, de
     return vertices, triangles
 
 
-# TODO 或许我们不用改这个函数？直接利用edge和gs改变传入的weights就行？
-# 根据weights计算出对应的pdf概率密度函数，然后得到cdf，然后通过cdf进行插值上采样得到插值后的点作为上采样的结果返回
 def sample_pdf(bins, weights, n_samples, det=False):
-    """
-    Sample new points based on a given probability density function (PDF) using inverse transform sampling.
-    This method is often used in volume rendering for NeRF (Neural Radiance Fields).
-
-    Arguments:
-    - bins: A tensor of bin edges used for sampling (shape: [batch_size, num_bins]).
-    - weights: A tensor of weights for each bin, representing the PDF (shape: [batch_size, num_bins - 1]).
-    - n_samples: The number of samples to generate.
-    - det: If True, perform deterministic sampling (uniform intervals); if False, perform random sampling.
-
-    Returns:
-    - samples: A tensor of sampled points (shape: [batch_size, n_samples]).
-    """
-
+    # This implementation is from NeRF
+    # Get pdf
     device = weights.device
-
-    # Prevent division by zero and NaN values by adding a small constant to weights.
-    # 而在有alph_occ的情况下，就用occ作为weights，也就是每个采样点的权重
-    weights = weights + 1e-5
-
-    # Compute the normalized PDF.
-    # 根据权重，计算pdf概率密度函数
+    weights = weights + 1e-5  # prevent nans
     pdf = weights / torch.sum(weights, -1, keepdim=True)
-
-    # Compute the cumulative distribution function (CDF) from the PDF.
-    # 根据PDF概率密度函数计算得到累加概率密度函数
     cdf = torch.cumsum(pdf, -1)
-
-    # Add a zero at the beginning of the CDF to account for the first bin.
     cdf = torch.cat([torch.zeros_like(cdf[..., :1]), cdf], -1)
-
-    # Generate sample positions 'u' in the CDF space.
+    # Take uniform samples
     if det:
-        # Deterministic sampling with uniform intervals.
         u = torch.linspace(0. + 0.5 / n_samples, 1. - 0.5 / n_samples, steps=n_samples).to(device)
         u = u.expand(list(cdf.shape[:-1]) + [n_samples])
     else:
-        # Random sampling.
         u = torch.rand(list(cdf.shape[:-1]) + [n_samples]).to(device)
 
-    # Ensure 'u' is contiguous in memory for efficient processing.
+    # Invert CDF
     u = u.contiguous()
-
-    # Find the indices of the CDF values that are just above 'u'.
     inds = torch.searchsorted(cdf, u, right=True)
-
-    # Ensure indices are within valid range.
     below = torch.max(torch.zeros_like(inds - 1), inds - 1)
     above = torch.min((cdf.shape[-1] - 1) * torch.ones_like(inds), inds)
+    inds_g = torch.stack([below, above], -1)  # (batch, N_samples, 2)
 
-    # Combine below and above indices for gathering.
-    inds_g = torch.stack([below, above], -1)  # Shape: [batch_size, n_samples, 2]
-
-    # Expand CDF and bins tensors to match the shape required for gathering values.
     matched_shape = [inds_g.shape[0], inds_g.shape[1], cdf.shape[-1]]
-
-    # Gather CDF values for the computed indices.
     cdf_g = torch.gather(cdf.unsqueeze(1).expand(matched_shape), 2, inds_g)
-
-    # Gather bin values for the computed indices.
     bins_g = torch.gather(bins.unsqueeze(1).expand(matched_shape), 2, inds_g)
 
-    # Calculate the denominator for interpolation, preventing division by zero.
     denom = (cdf_g[..., 1] - cdf_g[..., 0])
     denom = torch.where(denom < 1e-5, torch.ones_like(denom), denom)
-
-    # Compute the interpolation factor 't' within the bins.
     t = (u - cdf_g[..., 0]) / denom
-
-    # Compute the final samples using linear interpolation.
     samples = bins_g[..., 0] + t * (bins_g[..., 1] - bins_g[..., 0])
 
-    # Check for NaN values in the samples and pause execution for debugging if any are found.
     flag = torch.any(torch.isnan(samples)).cpu().numpy().item()
     if flag:
         print("z_vals", samples[torch.isnan(samples)])
         print('z_samples have nan values')
-        pdb.set_trace()  # Pause for debugging
+        pdb.set_trace()
         # raise Exception("z_samples have nan values")
 
-    # Return the sampled points.
     return samples
 
 
@@ -196,34 +155,13 @@ class UDFRendererBlending:
         self.sigmoid = nn.Sigmoid()
 
     def udf2logistic(self, udf, inv_s, gamma=20, abs_cos_val=1.0, cos_anneal_ratio=None):
-        """
-        将用户定义的函数(UDF)转换为逻辑斯谛函数的形式。
 
-        这种转换常用于将连续值转换为概率值，逻辑斯谛函数是一个常用的激活函数，
-        在神经网络中用于预测输出的概率。
-
-        参数:
-        udf (Tensor): 用户定义的函数的输出，这是一个标量张量。
-        inv_s (Tensor): 用于调整曲线斜率的参数，也是一个标量张量。
-        gamma (float, 可选): 用于缩放输出的参数，默认值为20。
-        abs_cos_val (float, 可选): 初始的绝对余弦值，用于控制曲线的形状，默认值为1.0。
-        cos_anneal_ratio (float, 可选): 余弦退火比例，用于动态调整abs_cos_val的值，默认为None。
-
-        返回:
-        Tensor: 逻辑斯谛函数的输出，与输入udf具有相同的形状。
-        """
-
-        # 如果cos_anneal_ratio给出，则根据公式动态调整abs_cos_val的值
         if cos_anneal_ratio is not None:
             abs_cos_val = (abs_cos_val * 0.5 + 0.5) * (1.0 - cos_anneal_ratio) + \
                           abs_cos_val * cos_anneal_ratio  # always non-positive
 
-        # 计算逻辑斯谛函数的原始输出
         raw = abs_cos_val * inv_s * torch.exp(-inv_s * udf) / (1 + torch.exp(-inv_s * udf)) ** 2
-
-        # 将原始输出乘以gamma进行缩放
         raw = raw * gamma
-
         return raw
 
     def render_core_outside(self, rays_o, rays_d, z_vals, sample_dist, nerf, background_rgb=None):
@@ -262,6 +200,82 @@ class UDFRendererBlending:
             'weights': weights,
         }
 
+    def up_sample_unbias(self, rays_o, rays_d, z_vals, udf, sample_dist,
+                         n_importance, inv_s, beta, gamma, debug=False):
+        """
+        up sampling strategy similar with NeuS;
+        only sample more points at the first possible surface intersection
+        """
+        device = z_vals.device
+        batch_size, n_samples = z_vals.shape
+        pts = rays_o[:, None, :] + rays_d[:, None, :] * z_vals[..., :, None]  # n_rays, n_samples, 3
+        radius = torch.linalg.norm(pts, ord=2, dim=-1, keepdim=False)
+        inside_sphere = (radius[:, :-1] < 1.0) | (radius[:, 1:] < 1.0)
+
+        udf = udf.reshape(batch_size, n_samples)
+
+        dists_raw = z_vals[..., 1:] - z_vals[..., :-1]
+        dists_raw = torch.cat([dists_raw, torch.Tensor([sample_dist]).to(device).expand(dists_raw[..., :1].shape)], -1)
+
+        dirs = rays_d[:, None, :].expand(pts.shape)
+
+        prev_udf, next_udf = udf[:, :-1], udf[:, 1:]
+        prev_z_vals, next_z_vals = z_vals[:, :-1], z_vals[:, 1:]
+        mid_udf = (prev_udf + next_udf) * 0.5
+        mid_z_vals = (prev_z_vals + next_z_vals) * 0.5
+
+        dists = (next_z_vals - prev_z_vals)
+
+        # !  directly use udf to approximate cos_val, otherwise, sampling will be biased
+        fake_sdf = udf
+        ## near the 0levelset, the cos_val approximation should be inaccurate
+        prev_sdf, next_sdf = fake_sdf[:, :-1], fake_sdf[:, 1:]
+
+        true_cos = (next_sdf - prev_sdf) / (next_z_vals - prev_z_vals + 1e-5)  # ! the cos_val will be larger than 1
+        cos_val = -1 * torch.abs(true_cos)
+
+        prev_cos_val = torch.cat([torch.zeros([batch_size, 1]).to(device), cos_val[:, :-1]], dim=-1)
+        cos_val = torch.stack([prev_cos_val, cos_val], dim=-1)
+        cos_val, _ = torch.min(cos_val, dim=-1, keepdim=False)
+
+        cos_val = cos_val.clip(-1e3, 0.0) * inside_sphere
+
+        # ! leverage the direction of gradients to alleviate the early zero of vis_prob
+        vis_mask = torch.ones_like(true_cos).to(true_cos.device).to(true_cos.dtype) * (
+                true_cos < 0.05).float()
+        vis_mask = vis_mask.reshape(batch_size, n_samples - 1)
+        vis_mask = torch.cat([torch.ones([batch_size, 1]).to(device), vis_mask], dim=-1)
+
+        # * the probability of occlusion
+        raw_occ = self.udf2logistic(udf, beta, 1.0, 1.0).reshape(batch_size, n_samples)
+        # near 0levelset alpha_acc -> 1 others -> 0
+        alpha_occ = 1.0 - torch.exp(-F.relu(raw_occ) * gamma * dists_raw)
+
+        # - use the vis_mask, make upsampling more uniform and centered
+        vis_prob = torch.cumprod(
+            torch.cat([torch.ones([batch_size, 1]).to(device), (1. - alpha_occ + vis_mask).clip(0, 1) + 1e-7], -1), -1)[
+                   :, :-1]  # before udf=0 -> 1; after udf=0 -> 0
+
+        signs_prob = vis_prob[:, :-1]
+        sdf_plus = mid_udf
+        sdf_minus = mid_udf * -1
+        alpha_plus = self.sdf2alpha(sdf_plus, cos_val, dists, inv_s)  # batch_size, n_samples
+        alpha_minus = self.sdf2alpha(sdf_minus, cos_val, dists, inv_s)
+        alpha = alpha_plus * signs_prob + alpha_minus * (1 - signs_prob)
+        alpha = alpha.reshape(batch_size, n_samples - 1)
+
+        weights = alpha * torch.cumprod(
+            torch.cat([torch.ones([batch_size, 1]).to(device), 1. - alpha + 1e-7], -1), -1)[:, :-1]
+        z_samples = sample_pdf(z_vals, weights, n_importance, det=True).detach()
+
+        flag = torch.any(torch.isnan(z_samples)).cpu().numpy().item()
+        if flag:
+            print("z_vals", z_samples[torch.isnan(z_samples)])
+            print('z_vals have nan values')
+            pdb.set_trace()
+            # raise Exception("gradients have nan values")
+
+        return z_samples
 
     def cat_z_vals(self, rays_o, rays_d, z_vals, new_z_vals, udf, net_gradients=None, last=False):
         batch_size, n_samples = z_vals.shape
@@ -284,51 +298,36 @@ class UDFRendererBlending:
     def sdf2alpha(self, sdf, true_cos, dists, inv_s, cos_anneal_ratio=None, udf_eps=None):
         # "cos_anneal_ratio" grows from 0 to 1 in the beginning training iterations. The anneal strategy below makes
         # the cos value "not dead" at the beginning training iterations, for better convergence.
-
-        # 若提供了 cos_anneal_ratio，则在训练初期通过调整 cos 值进行退火操作，以提升初期训练收敛效果。
         if cos_anneal_ratio is not None:
-            # 计算 iter_cos，取决于 cos_anneal_ratio，确保其总为非正数。
             iter_cos = -(F.relu(-true_cos * 0.5 + 0.5) * (1.0 - cos_anneal_ratio) +
                          F.relu(-true_cos) * cos_anneal_ratio)  # always non-positive
         else:
-            # 若未提供 cos_anneal_ratio，则直接使用 true_cos。
             iter_cos = true_cos
 
-        # 获取 iter_cos 的绝对值。
         abs_cos_val = iter_cos.abs()
 
-        # 若提供了 udf_eps，则进行以下处理。
         if udf_eps is not None:
-            # ! 在接近 udf=0 时，abs_cos_val 可能不准确。
+            # ? the abs_cos_val might be inaccurate near udf=0
             mask = sdf.abs() < udf_eps
-            # 对于满足条件的点，将 abs_cos_val 设为默认值 1。
             abs_cos_val[mask] = 1.  # {udf < udf_eps} use default abs_cos_val value
 
         if self.sdf2alpha_type == 'numerical':
-            # todo: 不能很好地处理靠近表面的情况。
-            # 估计下一个 SDF 值。
+            # todo: cannot handle near surface cases
             estimated_next_sdf = (sdf + iter_cos * dists * 0.5)
-            # 估计上一个 SDF 值。
             estimated_prev_sdf = (sdf - iter_cos * dists * 0.5)
 
-            # 计算上一个和下一个 CDF。
             prev_cdf = torch.sigmoid(estimated_prev_sdf * inv_s)
             next_cdf = torch.sigmoid(estimated_next_sdf * inv_s)
 
-            # 计算 p 和 c 的差值，这决定了光线的方向。
             p = prev_cdf - next_cdf  # ! this decides the ray shoot direction
             c = prev_cdf
 
-            # 计算 alpha 值，并进行截断处理。
             alpha = ((p + 1e-5) / (c + 1e-5))
             alpha = alpha.clip(0.0, 1.0)
         elif self.sdf2alpha_type == 'theorical':
-            # 理论方式计算 alpha 值。
             raw = abs_cos_val * inv_s * (1 - self.sigmoid(sdf * inv_s))
-            # 计算 alpha 值，确保其非负。
             alpha = 1.0 - torch.exp(-F.relu(raw) * dists)
 
-        # 返回计算的 alpha 值。
         return alpha
 
     def render_core(self,
@@ -685,17 +684,14 @@ class UDFRendererBlending:
         if self.n_importance > 0:
             # Choose the appropriate importance sampling method
             # z_vals中存储的会是最终的采样点的z values
-            # 这两个函数之间最大的区别在于上采样的策略不同，第一个的上采样更加精细一些
             if self.upsampling_type == 'classical':
                 z_vals = self.importance_sample(rays_o, rays_d, z_vals, sample_dist)
             elif self.upsampling_type == 'mix':
                 z_vals = self.importance_sample_mix(rays_o, rays_d, z_vals, sample_dist)
 
             # Update the number of sample points
-            # 采样点的最终数量等于n_samples+n_importance（平均采样点数量+权重采样点数量）
             n_samples = self.n_samples + self.n_importance
 
-        # 采样完毕，开始进入rendering的部分
         # Render the background if additional sample points are used
         if self.n_outside > 0:
             # Combine inside and outside sample points for background rendering
@@ -780,10 +776,6 @@ class UDFRendererBlending:
             'sparse_random_error': sparse_random_error
         }
 
-    '''
-    以下两个函数就是用于根据UDF等方式进行上采样的
-    '''
-    # TODO 因此这两个函数的位置，就可以成为我们edge map，gs_guide_udf的突破口
     @torch.no_grad()
     def importance_sample(self, rays_o, rays_d, z_vals, sample_dist):
         """
@@ -878,32 +870,19 @@ class UDFRendererBlending:
         batch_size = rays_o.shape[0]
 
         # Use the initial sampling points as the base for subsequent refinement
-        # 以最初的平均采样点作为后续 refinment 的基础
         base_z_vals = z_vals
 
         # Calculate the intermediate points along the rays
         # Up sample
-
-        # 这一步就是进行平均采样点的计算，计算在每条rays上相同位置的采样点（距离每条光线的起点距离相同）
-        # 生成每条光线在各个采样深度点的空间坐标
-        # 这些None就是用于增加一个维度，用于这个式子的 broadcast 运算
-        pts = rays_o[:, None, :] + rays_d[:, None, :] * z_vals[..., :, None] # (N_rays, M_samples, 3) N条光线上M个采样点，每个采样点有xyz三个坐标
+        pts = rays_o[:, None, :] + rays_d[:, None, :] * z_vals[..., :, None]
 
         # Use the neural network to estimate the volume density at the intermediate points
-        # 将 pts 由形状 (N_rays, M_samples, 3) 展平为 (N_rays * M_samples, 3)，以便喂入神经网络
-        udf_nn_output = self.udf_network(pts.reshape(-1, 3)) # 输出每个点的UDF估计值
-        '''
-        这里 batch_size 默认是 N_rays，self.n_samples 是 M_samples，所以 reshape 成 (N_rays, M_samples, -1) 的形状。
-        假定神经网络的输出是 (N_rays * M_samples, C) 的形状
-        '''
+        udf_nn_output = self.udf_network(pts.reshape(-1, 3))
         udf_nn_output = udf_nn_output.reshape(batch_size, self.n_samples, -1)
-        # 假设神经网络的输出的第一个通道（即 udf_nn_output[:, :, 0]）是我们需要的体积密度值，将其赋给 udf
-        # 也就是得到每个采样点对应的UDF值
         udf = udf_nn_output[:, :, 0]
         base_udf = udf
 
         # Get the beta and gamma parameters from the beta network, clipping their values to a reasonable range
-        # 这两个参数是用于在后续进行计算的时候可以进行梯度下降来训练的
         beta = self.beta_network.get_beta().clip(1e-6, 1e6)
         gamma = self.beta_network.get_gamma().clip(1e-6, 1e6)
 
@@ -955,174 +934,36 @@ class UDFRendererBlending:
         # Return the refined sampling points
         return z_vals
 
-    # TODO 或许从这里改Sample的方式也是极好的（或者利用这个代码重新写）
-    def up_sample_unbias(self, rays_o, rays_d, z_vals, udf, sample_dist,
-                         n_importance, inv_s, beta, gamma, debug=False):
+    def up_sample_no_occ_aware(self, rays_o, rays_d, z_vals, udf, sample_dist,
+                               n_importance, inv_s, beta, gamma, ):
         """
-        对射线进行上采样，以减少偏差。
-
-        该方法通过在可能的第一个表面交点处添加更多采样点，来改善NeuS风格的上采样策略。
-        它处理了透明物体内部的采样问题，避免了由于透明度估计不准确导致的采样偏差。
-
-        参数:
-        rays_o: 光源方向向量，形状为(batch_size, 3)。
-        rays_d: 射线方向向量，形状为(batch_size, 3)。
-        z_vals: 透明度估计的采样位置，形状为(batch_size, n_samples)。
-        udf: 单层透明度估计，形状为(batch_size, n_samples)。
-        sample_dist: 最初的采样距离。
-        n_importance: 重要采样的数量。
-        inv_s: 透明度函数的缩放参数。
-        beta: 控制透明度函数形状的参数。
-        gamma: 控制重要采样权重的参数。
-        debug: 是否开启调试模式。
-
-        返回:
-        上采样后的z值，形状为(batch_size, n_importance)。
+        Different with NeuS, here we sample more points at all possible surfaces where udf is close to 0;
+        Since unlike that SDF has clear sign changes, UDF sampling may miss the true surfaces
         """
-        # 获取设备信息和批量大小、样本数量
         device = z_vals.device
         batch_size, n_samples = z_vals.shape
-
-        # 计算采样点的位置
-        pts = rays_o[:, None, :] + rays_d[:, None, :] * z_vals[..., :, None]
-        # 计算每个采样点距离原点的距离
+        pts = rays_o[:, None, :] + rays_d[:, None, :] * z_vals[..., :, None]  # n_rays, n_samples, 3
         radius = torch.linalg.norm(pts, ord=2, dim=-1, keepdim=False)
-
-        # 判断采样点是否在单位球内
         inside_sphere = (radius[:, :-1] < 1.0) | (radius[:, 1:] < 1.0)
 
-        # 调整udf的形状以方便后续计算
         udf = udf.reshape(batch_size, n_samples)
 
-        # 计算相邻采样点的距离
-        dists_raw = z_vals[..., 1:] - z_vals[..., :-1]
-        # 将最后一个采样点距离设置为 sample_dist
-        dists_raw = torch.cat([dists_raw, torch.Tensor([sample_dist]).to(device).expand(dists_raw[..., :1].shape)], -1)
+        dists = z_vals[..., 1:] - z_vals[..., :-1]
+        dists = torch.cat([dists, torch.Tensor([sample_dist]).to(device).expand(dists[..., :1].shape)], -1)
 
-        # 扩展射线方向向量以匹配采样点数量
         dirs = rays_d[:, None, :].expand(pts.shape)
 
-        # 计算相邻采样点的udf和z值
-        prev_udf, next_udf = udf[:, :-1], udf[:, 1:]
-        prev_z_vals, next_z_vals = z_vals[:, :-1], z_vals[:, 1:]
-        mid_udf = (prev_udf + next_udf) * 0.5
-        mid_z_vals = (prev_z_vals + next_z_vals) * 0.5
+        # * the probability of occlusion
+        raw_occ = self.udf2logistic(udf, beta, gamma, 1.0)
+        # near 0levelset alpha_acc -> 1 others -> 0
+        alpha_occ = 1.0 - torch.exp(-F.relu(raw_occ.reshape(batch_size, n_samples)) * dists)
 
-        # 计算真实的距离间隔
-        dists = (next_z_vals - prev_z_vals)
+        z_samples = sample_pdf(z_vals, alpha_occ[:, :-1], n_importance, det=True).detach()
 
-        # 使用udf近似Signed Distance Function (SDF)
-        fake_sdf = udf
-        prev_sdf, next_sdf = fake_sdf[:, :-1], fake_sdf[:, 1:]
-
-        # 计算法向量的cos值，表示透明度的变化率
-        true_cos = (next_sdf - prev_sdf) / (next_z_vals - prev_z_vals + 1e-5)
-        cos_val = -1 * torch.abs(true_cos)
-
-        # 处理边界条件，确保cos值在合理范围内（保证都在单位球内）
-        cos_val = cos_val.clip(-1e3, 0.0) * inside_sphere
-
-        # 创建可视掩码，用于处理透明度近似的问题
-        vis_mask = torch.ones_like(true_cos).to(true_cos.device).to(true_cos.dtype) * (true_cos < 0.05).float()
-        vis_mask = vis_mask.reshape(batch_size, n_samples - 1)
-        vis_mask = torch.cat([torch.ones([batch_size, 1]).to(device), vis_mask], dim=-1)
-
-        # 计算遮挡概率
-        raw_occ = self.udf2logistic(udf, beta, 1.0, 1.0).reshape(batch_size, n_samples)
-        alpha_occ = 1.0 - torch.exp(-F.relu(raw_occ) * gamma * dists_raw)
-
-        # 使用可视掩码调整采样分布，使其更加均匀
-        vis_prob = torch.cumprod(
-            torch.cat([torch.ones([batch_size, 1]).to(device), (1. - alpha_occ + vis_mask).clip(0, 1) + 1e-7], -1), -1)[
-                   :, :-1]
-
-        # 根据透明度和法向量方向计算alpha值
-        # 区别就出现在了这里，这里的alpha值计算是根据了udf计算出来的遮挡概率、法向量、可视掩码的
-        # 因此这也导致了后续的采样权重也是受这些因素的影响的
-        signs_prob = vis_prob[:, :-1]
-        sdf_plus = mid_udf
-        sdf_minus = mid_udf * -1
-        alpha_plus = self.sdf2alpha(sdf_plus, cos_val, dists, inv_s)
-        alpha_minus = self.sdf2alpha(sdf_minus, cos_val, dists, inv_s)
-        alpha = alpha_plus * signs_prob + alpha_minus * (1 - signs_prob)
-        alpha = alpha.reshape(batch_size, n_samples - 1)
-
-        # 计算权重并进行上采样
-        weights = alpha * torch.cumprod(
-            torch.cat([torch.ones([batch_size, 1]).to(device), 1. - alpha + 1e-7], -1), -1)[:, :-1]
-        z_samples = sample_pdf(z_vals, weights, n_importance, det=True).detach()
-
-        # 检查是否存在NaN值
         flag = torch.any(torch.isnan(z_samples)).cpu().numpy().item()
         if flag:
             print("z_vals", z_samples[torch.isnan(z_samples)])
             print('z_vals have nan values')
             pdb.set_trace()
-            # raise Exception("gradients have nan values")
-
-        return z_samples
-    def up_sample_no_occ_aware(self, rays_o, rays_d, z_vals, udf, sample_dist,
-                               n_importance, inv_s, beta, gamma):
-        """
-        This function upsamples points along rays for volume rendering, focusing on areas where the unsigned distance function (UDF) is close to zero.
-        Unlike SDF (Signed Distance Function), UDF does not have clear sign changes, so it may miss true surfaces.
-        # 就是对于UDF小的地方进行更多地采样
-
-
-        Arguments:
-        - rays_o: Original points of the rays (tensor of shape [batch_size, 3]).
-        - rays_d: Directions of the rays (tensor of shape [batch_size, 3]).
-        - z_vals: Depth values along each ray (tensor of shape [batch_size, n_samples]).
-        - udf: Unsigned Distance Function values at sampled points (tensor of shape [batch_size * n_samples]).
-        - sample_dist: Distance between samples.
-        - n_importance: Number of important samples to draw.
-        - inv_s: Inverse scale parameter (not used in this function).
-        - beta, gamma: Parameters for the logistic function.
-
-        Returns:
-        - z_samples: New depth samples along the rays.
-        """
-
-        device = z_vals.device
-        batch_size, n_samples = z_vals.shape
-
-        # Calculate points along rays using origin and direction.
-        pts = rays_o[:, None, :] + rays_d[:, None, :] * z_vals[..., :, None]  # Shape: [batch_size, n_samples, 3]
-
-        # Compute the distance from each point to the origin.
-        radius = torch.linalg.norm(pts, ord=2, dim=-1, keepdim=False)
-
-        # Determine which points are inside the unit sphere.
-        inside_sphere = (radius[:, :-1] < 1.0) | (radius[:, 1:] < 1.0)
-
-        # Reshape UDF values to match batch and sample dimensions.
-        udf = udf.reshape(batch_size, n_samples)
-
-        # Compute distances between consecutive depth samples.
-        dists = z_vals[..., 1:] - z_vals[..., :-1]
-        dists = torch.cat([dists, torch.Tensor([sample_dist]).to(device).expand(dists[..., :1].shape)], -1)
-
-        # Expanding ray directions to match the shape of points.
-        dirs = rays_d[:, None, :].expand(pts.shape)
-
-        # * The probability of occlusion calculation.
-        # Convert UDF values to a logistic distribution for occlusion probability.
-        # 通过每个点的udf值（加一点计算），计算得到每个点的被遮挡概率
-        raw_occ = self.udf2logistic(udf, beta, gamma, 1.0)
-
-        # Compute alpha values representing the accumulated opacity. Near zero UDF values mean alpha -> 1,
-        # otherwise alpha -> 0.
-        # 就是论文中的surface existence probability h(r(t))
-        alpha_occ = 1.0 - torch.exp(-F.relu(raw_occ.reshape(batch_size, n_samples)) * dists)
-
-        # Sample new depth values based on the computed alpha values.
-        z_samples = sample_pdf(z_vals, alpha_occ[:, :-1], n_importance, det=True).detach()
-
-        # Check for NaN values in the samples and pause execution for debugging if any are found.
-        flag = torch.any(torch.isnan(z_samples)).cpu().numpy().item()
-        if flag:
-            print("z_vals", z_samples[torch.isnan(z_samples)])
-            print('z_vals have nan values')
-            pdb.set_trace()  # Pause for debugging
 
         return z_samples
