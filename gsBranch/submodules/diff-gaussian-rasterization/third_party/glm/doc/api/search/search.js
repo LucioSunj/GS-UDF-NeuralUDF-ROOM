@@ -141,7 +141,7 @@ function SearchBox(name, resultsPath, inFrame, label)
       clearTimeout(this.hideTimeout);
       this.hideTimeout=0;
     }
-    return false; // to avoid "image drag" default event
+    return false; // to avoid "images drag" default event
   }
 
   this.OnSearchSelectHide = function()

@@ -15,7 +15,7 @@ results, and the algorithms implementation is relatively simple. Most
 of the magic is in the lookup tables, which are provided as open source.
 
 Originally implemented in C++ by Thomas Lewiner in 2002, ported to Cython
-by Almar Klein in 2012. Adapted for scikit-image in 2016.
+by Almar Klein in 2012. Adapted for scikit-images in 2016.
 
 """
 

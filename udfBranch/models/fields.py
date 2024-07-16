@@ -125,6 +125,8 @@ class UDFNetwork(nn.Module):
                  geometric_init=True,
                  weight_norm=True,
                  udf_type='abs',
+                 udf_shift=0,
+                 predict_grad=False
                  ):
         super(UDFNetwork, self).__init__()
 
@@ -532,7 +534,7 @@ def color_blend(blending_weights, img_index,
         final_patch_color = torch.sum(pts_patch_color * weights_patch[:, :, :, None, None], dim=-3,
                                       keepdim=False)  # [batch, nsamples, Npx, 3]
         final_patch_mask = torch.sum(patch_mask, dim=-1,
-                                     keepdim=True) > 0  # [batch, nsamples, 1]  at least one image sees
+                                     keepdim=True) > 0  # [batch, nsamples, 1]  at least one images sees
 
     return final_pixel_color, final_pixel_mask, final_patch_color, final_patch_mask
 

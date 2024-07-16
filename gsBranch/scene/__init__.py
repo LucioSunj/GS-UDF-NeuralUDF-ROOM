@@ -68,7 +68,7 @@ class Scene:
         # If no iteration model is loaded, copies point cloud and camera information from scene info
         # 如果没有加载迭代模型，则从场景信息中复制点云文件和相机信息
         if not self.loaded_iter:
-            with open(scene_info.ply_path, 'rb') as src_file, open(os.path.join(self.model_path, "input.ply"),'wb') as dest_file:
+            with open(scene_info.ply_path, 'rb') as src_file, open(os.path.join(self.model_path, "images.ply"),'wb') as dest_file:
                 dest_file.write(src_file.read())
             json_cams = []
             camlist = []

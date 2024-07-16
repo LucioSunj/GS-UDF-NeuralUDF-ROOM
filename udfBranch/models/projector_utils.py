@@ -36,7 +36,7 @@ def cam2pixel(cam_coords, proj_c2p_rot, proj_c2p_tr, padding_mode, sizeH=None, s
     Y_norm = 2 * (Y / Z) / (sizeH - 1) - 1  # Idem [B, H*W]
     if padding_mode == 'zeros':
         X_mask = ((X_norm > 1) + (X_norm < -1)).detach()
-        X_norm[X_mask] = 2  # make sure that no point in warped image is a combinaison of im and gray
+        X_norm[X_mask] = 2  # make sure that no point in warped images is a combinaison of im and gray
         Y_mask = ((Y_norm > 1) + (Y_norm < -1)).detach()
         Y_norm[Y_mask] = 2
 

@@ -4,7 +4,7 @@ import cv2 as cv
 import numpy as np
 import os
 from glob import glob
-# from icecream import ic
+from icecream import ic
 from scipy.spatial.transform import Rotation as Rot
 from scipy.spatial.transform import Slerp
 import pdb
@@ -59,17 +59,17 @@ class Dataset:
         camera_dict = np.load(os.path.join(self.data_dir, self.render_cameras_name))
         self.camera_dict = camera_dict
         if self.dataset_name == 'dtu' or self.dataset_name == 'deepfashion3d':
-            self.images_lis = sorted(glob(os.path.join(self.data_dir, 'image/*.png')))
+            self.images_lis = sorted(glob(os.path.join(self.data_dir, 'images/*.png')))
             self.masks_lis = sorted(glob(os.path.join(self.data_dir, 'mask/*.png')))
         elif self.dataset_name == 'bmvs':
             self.images_lis = sorted(glob(os.path.join(self.data_dir, 'blended_images/*.jpg')))
             self.masks_lis = sorted(glob(os.path.join(self.data_dir, 'masks/*.jpg')))
         self.n_images = len(self.images_lis)
-
+        print(self.n_images)
         self.images_np = np.stack([cv.imread(im_name) for im_name in self.images_lis]) / 256.0
         self.masks_np = np.stack([cv.imread(im_name) for im_name in self.masks_lis]) / 256.0
 
-        # world_mat is a projection matrix from world to image
+        # world_mat is a projection matrix from world to images
         self.world_mats_np = [camera_dict['world_mat_%d' % idx].astype(np.float32) for idx in range(self.n_images)]
 
         # scale_mat: used for coordinate normalization, we assume the scene to render is inside a unit sphere at origin.
@@ -127,7 +127,7 @@ class Dataset:
         print('Load data: End')
 
     def prepare_ref_src_pairs(self):
-        # prepare the pairs of a reference image and several supporting images for color blending
+        # prepare the pairs of a reference images and several supporting images for color blending
         ref_src_pairs = {}
         cam_loc = self.pose_all[:, :3, 3]  # [V, 3]
         pair_dist = torch.cdist(cam_loc[None, :, :], cam_loc[None, :, :], p=2.0)  # [1, V, V]

@@ -84,7 +84,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     else:
         colors_precomp = override_color
 
-    # Rasterize visible Gaussians to image, obtain their radii (on screen).
+    # Rasterize visible Gaussians to images, obtain their radii (on screen).
     # 进行Cuda渲染（光栅化）
     # 就是直接进行forward了
     rendered_image, radii = rasterizer(

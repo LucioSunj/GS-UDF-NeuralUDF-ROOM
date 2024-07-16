@@ -1,7 +1,7 @@
 import base64
 import numpy as np
-import _marching_cubes_lewiner_luts as mcluts
-import _marching_cubes_lewiner_cy
+import udfBranch.custom_mc._marching_cubes_lewiner_luts as mcluts
+import udfBranch.custom_mc._marching_cubes_lewiner_cy
 
 
 def marching_cubes_lewiner(volume, level=None, spacing=(1., 1., 1.),
@@ -64,7 +64,7 @@ def marching_cubes_lewiner(volume, level=None, spacing=(1., 1., 1.),
         # left-handed
         faces = np.fliplr(faces)
     elif not gradient_direction == 'ascent':
-        raise ValueError("Incorrect input %s in `gradient_direction`, see "
+        raise ValueError("Incorrect images %s in `gradient_direction`, see "
                          "docstring." % (gradient_direction))
     if not np.array_equal(spacing, (1, 1, 1)):
         vertices = vertices * np.r_[spacing]
@@ -129,7 +129,7 @@ def udf_mc_lewiner(volume, grads, spacing=(1., 1., 1.),
         # left-handed
         faces = np.fliplr(faces)
     elif not gradient_direction == 'ascent':
-        raise ValueError("Incorrect input %s in `gradient_direction`, see "
+        raise ValueError("Incorrect images %s in `gradient_direction`, see "
                          "docstring." % (gradient_direction))
     if not np.array_equal(spacing, (1, 1, 1)):
         vertices = vertices * np.r_[spacing]

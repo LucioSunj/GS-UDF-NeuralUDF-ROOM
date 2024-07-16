@@ -82,7 +82,10 @@ python convert.py -s <location> --skip_matching [--resize] #If not resizing, Ima
 <br>
 
 #### UDF-Branch
-
+- Custom data: [Same with NeuS](https://github.com/Totoro97/NeuS/tree/main/preprocess_custom_data)
+  - 首先我们先学习一下它用ColMap创建的数据集的格式，这样两个就都是统一的方式了
+    - [ColMap Custom Dataset](https://blog.csdn.net/weixin_59961223/article/details/135429437)
+  - 但我们后面还是要再试试另一种，因为说不定多样性可以让结果表现更好
 ### 准备训练
 
 
