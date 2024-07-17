@@ -843,6 +843,7 @@ class UDFRendererBlending:
         udf = udf_nn_output[:, :, 0]
 
         # 迭代执行向上采样
+        # 与NeuS中一样，多次循环进行上采样
         for i in range(self.up_sample_steps):
             # 执行向上采样步骤，增加采样点
             new_z_vals = up_sample(rays_o,
