@@ -6,7 +6,6 @@ from scipy.io import loadmat
 import multiprocessing as mp
 import argparse, os, sys
 import cv2 as cv
-
 from pathlib import Path
 
 
