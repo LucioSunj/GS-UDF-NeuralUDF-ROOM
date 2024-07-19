@@ -436,7 +436,7 @@ class TrainHelper:
                         # 采样K个Gaussian的邻域
                         nearest_voxels = processor.query_nearest_voxels(kd_tree, voxel_grid, target_point, k=5)
 
-    # TODO 测试这个分割代码是否有用
+    # TODO 将PointPreprocesser的逻辑加入这里
     # 用
     def devide_space_into_cubes(self,ply, cube_size):
         self.processor = PointCloudProcessor()
