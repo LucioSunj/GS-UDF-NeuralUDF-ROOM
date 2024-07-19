@@ -1,214 +1,260 @@
 
 import numpy as np
 import torch
+from torch import nn
+# from data import dataset_readers
+from gsBranch.scene import dataset_readers
+from collections import defaultdict
+from scipy.spatial import cKDTree as KDTree
 from plyfile import PlyData
 
+class TrainHelper:
+    def test_main(self,ply_path,voxel_size=1,k=10):
+        # basic_point_cloud = dataset_readers.fetchPly(ply_path)
+        basic_point_cloud = self.load_ply(ply_path)
+        # 我们的需求是：
+        # 能够拿到所有voxel的中心点坐标（用于计算UDF值）以及其所包含的Points信息
+        voxel_centers, voxel_stats = TrainHelper.voxelize_point_cloud(basic_point_cloud, voxel_size)
+        processor = TrainHelper.PointCloudProcessor(voxel_centers, voxel_stats,voxel_size,k)
+
+        query_point = voxel_centers[0] # 替换为您感兴趣的查询点
+        neighbor_info = processor.get_k_nearest_points(query_point)
+        print(neighbor_info)
+    def __init__(self, args=None, runner=None):
+        self.args = args
+        self.runner = runner
+    def udf_guide_gs_global_densification(
+        self,
+    ):
+        # UDF-guided Global Densification
+        '''
+        将三维空间分为N^3的cubes，然后计算每个cube的中心点处的UDF值，然后以这个中心点作为Threshold的判断条件
+        If the value falls below the threshold (Sc < τs), it indicates that the grid is in proximity to the scene surface.
+        Subsequently, we enumerate the existing Gaussian primitives within each grid. In cases where the number of
+        Gaussian primitives is insufficient (Ng < τn),
+        we select the K Gaussian neighbors of the grid’s center point and generate K new Gaussian primitives within the grid.
+        The initial attributes of these newly generated Gaussian primitives are sampled from a normal distribution
+        defined by the mean and variance of the K neighboring Gaussians.
+        '''
+
+        # 首先要将3D空间分为N^3的cubes,并且得到每个cube的中心点以及其所包含的 gs 的数量与相关信息
+        cubes = self.devide_space_into_cubes()
+        for cube in cubes:
+            # 计算每个cube的中心点处的UDF值
+            # TODO 这里传入当前runner的UDF网络从而计算每个cube的中心点的UDF值
+            udf = self.runner.compute_udf(cube)
+            # 以这个中心点作为Threshold的判断条件
+            if udf < self.args.threshold_u:
+                # 枚举该cube内的所有Gaussian
+                for gaussian in cube.gaussians:
+                    # 如果该Gaussian的数量小于τn，则选择K个Gaussian的邻域，生成K个新的Gaussian
+                    if len(gaussian) < self.args.threshold_n:
+                        # 采样K个Gaussian的邻域
+                        pass
+
+    # TODO 测试这个分割代码是否有用
+    # 用
+    def devide_space_into_cubes(self,ply, cube_size):
+        try:
+            pcd = dataset_readers.fetchPly(ply)
+        except:
+            pcd = None
+        # points = pcd.points[::1] # 这是每个点的位置信息
+
+        # 检查cube_size是否合理
+        # if cube_size <= 0:
+        #     init_points = torch.tensor(points).float().cuda()
+        #     init_dist = distCUDA2(init_points).float().cuda()
+        #     median_dist, _ = torch.kthvalue(init_dist, int(init_dist.shape[0] * 0.5))
+        #     cube_size = median_dist.item()
+        #     del init_dist
+        #     del init_points
+        #     torch.cuda.empty_cache()
+        # 产生cubes
+        # points = self.voxelize_sample(points, voxel_size=cube_size)
+        voxel_centers, voxel_stats = TrainHelper.voxelize_point_cloud(pcd, cube_size)
+
+        result = {
+
+        }
+        return result
+
+    # def voxelize_sample(self, data=None, voxel_size=0.01):
+    #     """
+    #     对给定的数据进行体素化处理。
+    #
+    #     体素化是将三维空间中的数据点转换成一定大小的体素(三维像素)的过程。这个函数首先对数据点进行随机打乱，
+    #     然后根据指定的体素大小进行体素化处理，确保结果中的每个数据点代表一个独特的体素中心。
+    #
+    #     参数:
+    #     data: numpy数组，包含需要进行体素化处理的数据点坐标。默认为None。
+    #     voxel_size: float，表示体素的大小。默认为0.01。
+    #
+    #     返回:
+    #     numpy数组，经过体素化处理后的数据点坐标。
+    #     """
+    #     # 对数据点进行随机打乱，以便后续处理
+    #     np.random.shuffle(data)
+    #
+    #     # 将数据点按体素大小进行量化，并去除重复的体素中心
+    #     data = np.unique(np.round(data / voxel_size), axis=0) * voxel_size
+    #
+    #     # 返回体素化处理后的数据
+    #     return data
+    def load_ply(self, path):
+        plydata = PlyData.read(path)
+
+        xyz = np.stack((np.asarray(plydata.elements[0]["x"]),
+                        np.asarray(plydata.elements[0]["y"]),
+                        np.asarray(plydata.elements[0]["z"])),  axis=1)
+        opacities = np.asarray(plydata.elements[0]["opacity"])[..., np.newaxis]
+
+        features_dc = np.zeros((xyz.shape[0], 3, 1))
+        features_dc[:, 0, 0] = np.asarray(plydata.elements[0]["f_dc_0"])
+        features_dc[:, 1, 0] = np.asarray(plydata.elements[0]["f_dc_1"])
+        features_dc[:, 2, 0] = np.asarray(plydata.elements[0]["f_dc_2"])
+
+        extra_f_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("f_rest_")]
+        extra_f_names = sorted(extra_f_names, key = lambda x: int(x.split('_')[-1]))
+        assert len(extra_f_names)==3*(self.args.max_sh_degree + 1) ** 2 - 3
+        features_extra = np.zeros((xyz.shape[0], len(extra_f_names)))
+        for idx, attr_name in enumerate(extra_f_names):
+            features_extra[:, idx] = np.asarray(plydata.elements[0][attr_name])
+        # Reshape (P,F*SH_coeffs) to (P, F, SH_coeffs except DC)
+        features_extra = features_extra.reshape((features_extra.shape[0], 3, (self.args.max_sh_degree + 1) ** 2 - 1))
+
+        scale_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("scale_")]
+        scale_names = sorted(scale_names, key = lambda x: int(x.split('_')[-1]))
+        scales = np.zeros((xyz.shape[0], len(scale_names)))
+        for idx, attr_name in enumerate(scale_names):
+            scales[:, idx] = np.asarray(plydata.elements[0][attr_name])
+
+        rot_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("rot")]
+        rot_names = sorted(rot_names, key = lambda x: int(x.split('_')[-1]))
+        rots = np.zeros((xyz.shape[0], len(rot_names)))
+        for idx, attr_name in enumerate(rot_names):
+            rots[:, idx] = np.asarray(plydata.elements[0][attr_name])
+
+        pcd = {}
+        pcd.xyz = nn.Parameter(torch.tensor(xyz, dtype=torch.float, device="cuda").requires_grad_(True))
+        pcd.features_dc = nn.Parameter(torch.tensor(features_dc, dtype=torch.float, device="cuda").transpose(1, 2).contiguous().requires_grad_(True))
+        pcd.features_rest = nn.Parameter(torch.tensor(features_extra, dtype=torch.float, device="cuda").transpose(1, 2).contiguous().requires_grad_(True))
+        pcd.opacity = nn.Parameter(torch.tensor(opacities, dtype=torch.float, device="cuda").requires_grad_(True))
+        pcd.scaling = nn.Parameter(torch.tensor(scales, dtype=torch.float, device="cuda").requires_grad_(True))
+        pcd.rotation = nn.Parameter(torch.tensor(rots, dtype=torch.float, device="cuda").requires_grad_(True))
+        pcd.active_sh_degree = self.args.max_sh_degree
+        # pcd.active_sh_degree = 3
+        return pcd
+
+    class BasicPointCloud:
+        def __init__(self, points, colors, normals):
+            self.points = points
+            self.colors = colors
+            self.normals = normals
 
 
-# def udf_guide_gs(
-#     runner,
-#
-# ):
-#     # UDF-guided Global Densification
-#     '''
-#     将三维空间分为N^3的cubes，然后计算每个cube的中心点处的UDF值，然后以这个中心点作为Threshold的判断条件
-#     If the value falls below the threshold (Sc < τs), it indicates that the grid is in proximity to the scene surface.
-#     Subsequently, we enumerate the existing Gaussian primitives within each grid. In cases where the number of
-#     Gaussian primitives is insufficient (Ng < τn),
-#     we select the K Gaussian neighbors of the grid’s center point and generate K new Gaussian primitives within the grid.
-#     The initial attributes of these newly generated Gaussian primitives are sampled from a normal distribution
-#     defined by the mean and variance of the K neighboring Gaussians.
-#     '''
-#
-#     # 首先要将3D空间分为N^3的cubes
-#     cubes = devide_space_into_cubes()
-#     for cube in cubes:
-#         # 计算每个cube的中心点处的UDF值
-#         # TODO 这里传入当前runner的UDF网络从而计算每个cube的中心点的UDF值
-#         udf = runner.compute_udf(cube)
-#         # 以这个中心点作为Threshold的判断条件
-#         if udf < threshold:
-#             # 枚举该cube内的所有Gaussian
-#             for gaussian in cube.gaussians:
-#                 # 如果该Gaussian的数量小于τn，则选择K个Gaussian的邻域，生成K个新的Gaussian
-#                 if len(gaussian) < threshold_n:
-#                     # 采样K个Gaussian的邻域
-#
-#
-#
-#
-#     # TODO UDF-guided Densification and Pruning
-#     '''
-#     （增强版Densification and Pruning) : 对于已经有了足够的GS的Cubes，我们开始做这一步（应该说，做完上一步就继续做这一步），
-#     对于每个GS，我们通过其三维坐标 x 计算对应UDF值（直接丢入当前的UDF网络即可），然后通过下式（如何推导的？）计算每个GS对应的这个值，
-#     it signifies that the Gaussian is either far from the SDF zero-level set or possesses low opacity.
-#     In such instances, if η < τp, the Gaussian primitive will be pruned. Conversely,
-#     when η > τd and the gradient of the Gaussian satisfies ∇g > τg, the Gaussian primitive will be densified.
-#     '''
+    class VoxelGrid:
+        def __init__(self, voxel_size: float):
+            self.voxel_size = voxel_size
+            self.voxels = defaultdict(list)
+
+        def add_point(self, point, color, normal):
+            voxel_index = tuple(np.floor(point / self.voxel_size).astype(int))
+            self.voxels[voxel_index].append((point, color, normal))
+
+        # TODO 能跑之后可以用numpy进行批量添加的计算
+        # def add_points(self, points, colors, normals):
+        #     # 用 NumPy 进行批量计算
+        #     voxel_indices = np.floor(points / self.voxel_size).astype(int)
+        #
+        #     for index, (point, color, normal) in enumerate(zip(points, colors, normals)):
+        #         voxel_index = tuple(voxel_indices[index])
+        #         self.voxels[voxel_index].append((point, color, normal))
+
+        def get_voxel_centers_and_stats(self):
+            voxel_centers = []
+            voxel_stats = []
+
+            for voxel_index, points in self.voxels.items():
+                positions = np.array([p[0] for p in points])
+                colors = np.array([p[1] for p in points])
+                normals = np.array([p[2] for p in points])
+
+                center = (np.array(voxel_index) + 0.5) * self.voxel_size
+                voxel_centers.append(center)
+                voxel_stats.append({
+                    'num_points': len(points),
+                    'points': positions,
+                    'colors': colors,
+                    'normals': normals
+                })
+
+            return np.array(voxel_centers), voxel_stats
 
 
-def gs_guide_udf(
+    def voxelize_point_cloud(self,pcd: BasicPointCloud, voxel_size: float):
+        grid = self.VoxelGrid(voxel_size=voxel_size)
 
-):
-    pass
+        # 将点云数据添加到体素网格中
+        for i in range(len(pcd.points)):
+            grid.add_point(pcd.points[i], pcd.colors[i], pcd.normals[i])
 
-
-
-'''
-read_ply: 读取 .ply 文件并提取点的位置信息、颜色和高斯分布参数。
-get_bounding_box: 获取点云的包围盒，以确定空间分割的范围。
-generate_cubes: 在包围盒范围内生成多个小立方体的中心坐标。
-points_in_cube: 检查哪些点落在某个立方体内，并返回这些点的索引。
-main: 主函数执行上述步骤，并返回每个小立方体的中心坐标及包含的点及参数。
-'''
-# TODO 测试这个分割代码是否有用
-# 用
-def devide_space_into_cubes(ply_file, cube_size):
-    points = read_ply(ply_file)
-    min_corner, max_corner = get_bounding_box(points)
-    centers = generate_cubes(min_corner, max_corner, cube_size)
-    indices_list = points_in_cube(points, centers, cube_size)
-
-    result = []
-    for center, indices in zip(centers, indices_list):
-        contained_points = points[indices]
-
-        result.append({
-            'center': center,
-            'points': contained_points,
-        })
-
-    return result
+        return grid.get_voxel_centers_and_stats()
 
 
-def read_ply(ply_file):
-    ply_data = PlyData.read(ply_file)
-    vertices = ply_data['vertex']
+    class PointCloudProcessor:
+        def __init__(self, voxel_centers,voxel_stats, k):
+            self.k = k
+            self.voxel_stats = voxel_stats
+            self.kd_tree = KDTree(voxel_centers)  # 使用KD-Tree来加速邻近点查询
 
-    points = np.vstack([vertices['x'], vertices['y'], vertices['z']]).T
+        # 这一步用于获取k近邻来生成当前新的gs
+        def get_k_nearest_points(self, query_point):
+            distances, nearest_indices = self.kd_tree.query(query_point, k=self.k)
 
-    return points
+            neighbor_points = []
+            neighbor_colors = []
+            neighbor_normals = []
 
+            for index in nearest_indices:
+                stats = self.voxel_stats[index]
+                neighbor_points.append(stats['points'])
+                neighbor_colors.append(stats['colors'])
+                neighbor_normals.append(stats['normals'])
 
-def get_bounding_box(points):
-    min_corner = np.min(points, axis=0)
-    max_corner = np.max(points, axis=0)
-    return min_corner, max_corner
+            return {
+                'points': np.vstack(neighbor_points),
+                'colors': np.vstack(neighbor_colors),
+                'normals': np.vstack(neighbor_normals)
+            }
+    def udf_guide_gs_densification_pruning(self):
+        # TODO UDF-guided Densification and Pruning
+        '''
+        （增强版Densification and Pruning) : 对于已经有了足够的GS的Cubes，我们开始做这一步（应该说，做完上一步就继续做这一步），
+        对于每个GS，我们通过其三维坐标 x 计算对应UDF值（直接丢入当前的UDF网络即可），然后通过下式（如何推导的？）计算每个GS对应的这个值，
+        it signifies that the Gaussian is either far from the SDF zero-level set or possesses low opacity.
+        In such instances, if η < τp, the Gaussian primitive will be pruned. Conversely,
+        when η > τd and the gradient of the Gaussian satisfies ∇g > τg, the Gaussian primitive will be densified.
+        '''
+        pass
+    def gs_guide_udf(
+        self
+    ):
+        pass
 
-
-def generate_cubes(min_corner, max_corner, cube_size):
-    x_centers = np.arange(min_corner[0] + cube_size / 2, max_corner[0], cube_size)
-    y_centers = np.arange(min_corner[1] + cube_size / 2, max_corner[1], cube_size)
-    z_centers = np.arange(min_corner[2] + cube_size / 2, max_corner[2], cube_size)
-
-    grid_points = np.meshgrid(x_centers, y_centers, z_centers, indexing='ij')
-    grid_points = np.stack(grid_points, axis=-1).reshape(-1, 3)
-    return grid_points
-
-
-def points_in_cube(points, centers, cube_size, chunk_size=3000):
-    half_size = cube_size / 2
-    indices_list = [[] for _ in range(len(centers))]
-
-    min_corners = centers - half_size
-    max_corners = centers + half_size
-
-    for i in range(0, len(points), chunk_size):
-        points_chunk = points[i:i + chunk_size]
-        conditions = np.all(
-            (points_chunk[:, np.newaxis] >= min_corners[np.newaxis]) &
-            (points_chunk[:, np.newaxis] <= max_corners[np.newaxis]),
-            axis=-1
-        )
-        chunk_indices_list = [np.flatnonzero(cond) for cond in conditions.T]
-
-        for j, chunk_indices in enumerate(chunk_indices_list):
-            if len(chunk_indices) > 0:
-                indices_list[j].extend(chunk_indices + i)
-
-    return indices_list
 
 
 if __name__ == '__main__':
     ply_file = 'output/ggbond/point_cloud/iteration_7000/point_cloud.ply'
     cube_size = 1  # 假设每个小立方体的边长为 1
-    result = devide_space_into_cubes(ply_file, cube_size)
+    # result = TrainHelper.devide_space_into_cubes(ply_file, cube_size)
+    trainhelper = TrainHelper()
+    trainhelper.test_main(ply_path=ply_file, voxel_size=cube_size,k=10)
+    # # 打印结果或者进一步处理
+    # for cube in result:
+    #     if len(cube['points']) > 0:  # 仅打印包含点的立方体
+    #         print(f"Cube Center: {cube['center']}")
+    #         print(f"Contained Points: {cube['points']}")
 
-    # 打印结果或者进一步处理
-    for cube in result:
-        if len(cube['points']) > 0:  # 仅打印包含点的立方体
-            print(f"Cube Center: {cube['center']}")
-            print(f"Contained Points: {cube['points']}")
 
 
-# def devide_space_into_cubes(ply_file, cube_size):
-#     points = read_ply(ply_file)
-#     min_corner, max_corner = get_bounding_box(points)
-#     centers = generate_cubes(min_corner, max_corner, cube_size)
-#     indices_list = points_in_cube(points, centers, cube_size)
-#
-#     result = []
-#     for center, indices in zip(centers, indices_list):
-#         contained_points = points[indices]
-#
-#         result.append({
-#             'center': center,
-#             'points': contained_points,
-#         })
-#
-#     return result
-#
-# def read_ply(ply_file):
-#     ply_data = PlyData.read(ply_file)
-#     vertices = ply_data['vertex']
-#
-#     points = np.vstack([vertices['x'], vertices['y'], vertices['z']]).T
-#
-#     return points
-#
-# def get_bounding_box(points):
-#     min_corner = np.min(points, axis=0)
-#     max_corner = np.max(points, axis=0)
-#     return min_corner, max_corner
-#
-# def generate_cubes(min_corner, max_corner, cube_size):
-#     x_centers = np.arange(min_corner[0] + cube_size / 2, max_corner[0], cube_size)
-#     y_centers = np.arange(min_corner[1] + cube_size / 2, max_corner[1], cube_size)
-#     z_centers = np.arange(min_corner[2] + cube_size / 2, max_corner[2], cube_size)
-#
-#     grid_points = np.meshgrid(x_centers, y_centers, z_centers, indexing='ij')
-#     grid_points = np.stack(grid_points, axis=-1).reshape(-1, 3)
-#     return grid_points
-#
-# def points_in_cube(points, centers, cube_size, chunk_size=1000):
-#     points = torch.tensor(points, device='cuda')
-#     centers = torch.tensor(centers, device='cuda')
-#     half_size = cube_size / 2
-#
-#     min_corners = centers - half_size
-#     max_corners = centers + half_size
-#
-#     indices_list = [[] for _ in range(len(centers))]
-#
-#     for i in range(0, len(points), chunk_size):
-#         points_chunk = points[i:i + chunk_size]
-#         conditions = (points_chunk[:, None] >= min_corners[None]) & (points_chunk[:, None] <= max_corners[None])
-#         conditions = conditions.all(dim=-1)
-#
-#         for j in range(len(centers)):
-#             chunk_indices = torch.nonzero(conditions[:, j]).squeeze().cpu().numpy()
-#             if len(chunk_indices) > 0:
-#                 indices_list[j].extend(chunk_indices + i)
-#
-#     return indices_list
-#
-# if __name__ == '__main__':
-#     ply_file = 'output/ggbond/point_cloud/iteration_7000/point_cloud.ply'
-#     cube_size = 1  # 假设每个小立方体的边长为 1
-#     result = devide_space_into_cubes(ply_file, cube_size)
-#
-#     # 打印结果或者进一步处理
-#     for cube in result:
-#         if len(cube['points']) > 0:  # 仅打印包含点的立方体
-#             print(f"Cube Center: {cube['center']}")
-#             print(f"Contained Points: {cube['points']}")
