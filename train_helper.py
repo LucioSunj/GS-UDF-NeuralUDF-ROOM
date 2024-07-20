@@ -298,17 +298,12 @@ class TrainHelper:
         cubic_grid = self.devide_space_into_cubes(ply_path, cube_size)
         for point, point_count in cubic_grid:
             # 计算每个cube的中心点处的UDF值
-            # TODO 这里传入当前runner的UDF网络从而计算每个cube的中心点的UDF值
             point = np.array(point)
             udf = self.runner.compute_udf(point)
             # 以这个中心点作为Threshold的判断条件
             if udf < self.args.threshold_u:
-                # 枚举该cube内的所有Gaussian
-                # for gaussian in cube.gaussians:
                 #     # 如果该Gaussian的数量小于τn，则选择K个Gaussian的邻域，生成K个新的Gaussian
-                #     if len(gaussian) < self.args.threshold_n:
-                #         # 采样K个Gaussian的邻域
-                #         pass
+                #      采样K个Gaussian的邻域
                 # 若当前位置的UDF值小于τs，则将当前位置可能需要产生高斯，就看看该位置的高斯数量是否足
                 if point_count < self.args.threshold_n:
                     # 若数量不够，就需要sample k个近邻的gs创建新的gs放在该位置
@@ -326,7 +321,7 @@ class TrainHelper:
                                                         new_point["opacity"], new_point["scaling"], new_point["rotation"])
 
 
-    # TODO 将PointPreprocesser的逻辑加入这里
+
     #
     def devide_space_into_cubes(self,ply, cube_size=1):
 
