@@ -418,6 +418,38 @@ class PointCloudProcessor:
         }
         return pcd
 
+    # def create_cubic_grid(self):
+    #     min_xyz = torch.min(self.point_cloud['xyz'], dim=0).values
+    #     max_xyz = torch.max(self.point_cloud['xyz'], dim=0).values
+    #     grid_shape = torch.ceil((max_xyz - min_xyz) / self.cube_size).to(torch.int)
+    #
+    #     grid = {}
+    #
+    #     # Iterate through batches
+    #     num_points = self.point_cloud['xyz'].shape[0]
+    #     for batch_start in range(0, num_points, self.batch_size):
+    #         batch_end = min(batch_start + self.batch_size, num_points)
+    #         batch_xyz = self.point_cloud['xyz'][batch_start:batch_end]
+    #
+    #         for i in range(grid_shape[0]):
+    #             for j in range(grid_shape[1]):
+    #                 for k in range(grid_shape[2]):
+    #                     center = min_xyz + torch.tensor([i, j, k], dtype=torch.float,
+    #                                                     device="cuda") * self.cube_size + self.cube_size / 2
+    #                     center_tuple = tuple(center.cpu().detach().numpy())  # Convert to tuple for dictionary key
+    #
+    #                     # Calculate points in this cube
+    #                     low_bound = min_xyz + torch.tensor([i, j, k], dtype=torch.float, device="cuda") * self.cube_size
+    #                     high_bound = low_bound + self.cube_size
+    #                     points_in_cube = ((batch_xyz >= low_bound) & (batch_xyz < high_bound)).all(dim=1)
+    #                     point_count = points_in_cube.sum().item()
+    #
+    #                     if center_tuple in grid:
+    #                         grid[center_tuple] += point_count
+    #                     else:
+    #                         grid[center_tuple] = point_count
+    #
+    #     return grid
     def create_cubic_grid(self):
         min_xyz = torch.min(self.point_cloud['xyz'], dim=0).values
         max_xyz = torch.max(self.point_cloud['xyz'], dim=0).values
@@ -425,32 +457,45 @@ class PointCloudProcessor:
 
         grid = {}
 
+        # Create all possible grid centers
+        grid_indices = torch.stack(torch.meshgrid(
+            torch.arange(grid_shape[0], device="cuda"),
+            torch.arange(grid_shape[1], device="cuda"),
+            torch.arange(grid_shape[2], device="cuda")
+        ), dim=-1).reshape(-1, 3)
+
+        centers = min_xyz + grid_indices.float() * self.cube_size + self.cube_size / 2
+        centers = centers.cpu().detach().numpy()
+
+        # Initialize all grid cells with 0 points
+        for center in centers:
+            grid[tuple(center)] = 0
+
         # Iterate through batches
         num_points = self.point_cloud['xyz'].shape[0]
         for batch_start in range(0, num_points, self.batch_size):
             batch_end = min(batch_start + self.batch_size, num_points)
             batch_xyz = self.point_cloud['xyz'][batch_start:batch_end]
 
-            for i in range(grid_shape[0]):
-                for j in range(grid_shape[1]):
-                    for k in range(grid_shape[2]):
-                        center = min_xyz + torch.tensor([i, j, k], dtype=torch.float,
-                                                        device="cuda") * self.cube_size + self.cube_size / 2
-                        center_tuple = tuple(center.cpu().detach().numpy())  # Convert to tuple for dictionary key
+            # Compute the voxel indices for the batch
+            indices = torch.floor((batch_xyz - min_xyz) / self.cube_size).to(torch.int)
 
-                        # Calculate points in this cube
-                        low_bound = min_xyz + torch.tensor([i, j, k], dtype=torch.float, device="cuda") * self.cube_size
-                        high_bound = low_bound + self.cube_size
-                        points_in_cube = ((batch_xyz >= low_bound) & (batch_xyz < high_bound)).all(dim=1)
-                        point_count = points_in_cube.sum().item()
+            # Filter out-of-bound indices
+            valid_mask = (indices >= 0) & (indices < grid_shape)
+            valid_mask = valid_mask.all(dim=1)
+            indices = indices[valid_mask]
 
-                        if center_tuple in grid:
-                            grid[center_tuple] += point_count
-                        else:
-                            grid[center_tuple] = point_count
+            # Compute voxel centers
+            centers = (indices.float() * self.cube_size) + min_xyz + self.cube_size / 2
+            centers = centers.cpu().detach().numpy()
+
+            # Count points in each voxel
+            unique_centers, counts = np.unique(centers, axis=0, return_counts=True)
+            for center, count in zip(unique_centers, counts):
+                center_tuple = tuple(center)
+                grid[center_tuple] += count
 
         return grid
-
     def find_nearest_points(self, center, k):
         dists = torch.norm(self.point_cloud['xyz'] - center, dim=1)
         nearest_indices = torch.topk(dists, k, largest=False).indices
