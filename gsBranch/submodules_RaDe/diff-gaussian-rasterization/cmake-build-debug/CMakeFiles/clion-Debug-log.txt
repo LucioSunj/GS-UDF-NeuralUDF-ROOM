@@ -1,0 +1,13 @@
+"E:\CLion 2023.2.2\bin\cmake\win\x64\bin\cmake.exe" -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_MAKE_PROGRAM=E:/CLion 2023.2.2/bin/ninja/win/x64/ninja.exe" -G Ninja -S "E:\AI Learning material\Gaussian-Splatting-Nowaday-Works\Regularization-method\RaDe-GS\submodules\diff-gaussian-rasterization" -B "E:\AI Learning material\Gaussian-Splatting-Nowaday-Works\Regularization-method\RaDe-GS\submodules\diff-gaussian-rasterization\cmake-build-debug"
+CMake Error at E:/CLion 2023.2.2/bin/cmake/win/x64/share/cmake-3.28/Modules/Internal/CMakeCUDAFindToolkit.cmake:104 (message):
+  Failed to find nvcc.
+
+  Compiler requires the CUDA toolkit.  Please set the CUDAToolkit_ROOT
+  variable.
+Call Stack (most recent call first):
+  E:/CLion 2023.2.2/bin/cmake/win/x64/share/cmake-3.28/Modules/CMakeDetermineCUDACompiler.cmake:89 (cmake_cuda_find_toolkit)
+  CMakeLists.txt:14 (project)
+
+
+CMake Error: CMAKE_CXX_COMPILER not set, after EnableLanguage
+-- Configuring incomplete, errors occurred!
