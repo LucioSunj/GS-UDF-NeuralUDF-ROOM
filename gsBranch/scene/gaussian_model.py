@@ -8,9 +8,12 @@
 #
 # For inquiries contact  george.drettakis@inria.fr
 #
+import math
 
 import torch
 import numpy as np
+
+from gsBranch.scene.appearance_network import AppearanceNetwork
 from gsBranch.utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_rotation
 from torch import nn
 import os
@@ -57,7 +60,14 @@ class GaussianModel:
         self.percent_dense = 0
         self.spatial_lr_scale = 0
         self.setup_functions()
-
+        # 这里是从RaDe-GS中拿来的，原本属于GOF中的东西
+        # appearance network and appearance embedding
+        # this module is adopted from GOF
+        # self.appearance_network = AppearanceNetwork(3 + 64, 3).cuda()
+        #
+        # std = 1e-4
+        # self._appearance_embeddings = nn.Parameter(torch.empty(2048, 64).cuda())
+        # self._appearance_embeddings.data.normal_(0, std)
     def capture(self):
         return (
             self.active_sh_degree,
@@ -122,6 +132,14 @@ class GaussianModel:
     def oneupSHdegree(self):
         if self.active_sh_degree < self.max_sh_degree:
             self.active_sh_degree += 1
+
+    '''
+    以下是RaDe-GS相关的functions
+    '''
+    @torch.no_grad()
+    def reset_3D_filter(self):
+        xyz = self.get_xyz
+        self.filter_3D = torch.zeros([xyz.shape[0], 1], device=xyz.device)
 
     @torch.no_grad()
     def compute_3D_filter(self, cameras):
@@ -238,6 +256,18 @@ class GaussianModel:
         # TODO box to gaussian transform
         filter_3D = distance / focal_length * (0.2 ** 0.5)
         self.filter_3D = torch.cat([self.filter_3D, filter_3D[..., None]])
+
+    @property
+    def get_scaling_n_opacity_with_3D_filter(self):
+        opacity = self.opacity_activation(self._opacity)
+        scales = self.get_scaling
+        scales_square = torch.square(scales)
+        det1 = scales_square.prod(dim=1)
+        scales_after_square = scales_square + torch.square(self.filter_3D)
+        det2 = scales_after_square.prod(dim=1)
+        coef = torch.sqrt(det1 / det2)
+        scales = torch.sqrt(scales_after_square)
+        return scales, opacity * coef[..., None]
 
     def create_from_pcd(self, pcd: BasicPointCloud, spatial_lr_scale: float):
         """

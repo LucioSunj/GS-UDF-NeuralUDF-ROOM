@@ -21,13 +21,13 @@ class Camera(nn.Module):
                  ):
         super(Camera, self).__init__()
 
-        self.uid = uid
+        self.uid = uid # uid是啥？？
         self.colmap_id = colmap_id
         self.R = R
         self.T = T
         self.FoVx = FoVx
         self.FoVy = FoVy
-        self.image_name = image_name
+        self.image_name = image_name # image_name是啥？？
 
         try:
             self.data_device = torch.device(data_device)
@@ -55,7 +55,23 @@ class Camera(nn.Module):
         self.projection_matrix = getProjectionMatrix(znear=self.znear, zfar=self.zfar, fovX=self.FoVx, fovY=self.FoVy).transpose(0,1).cuda()
         self.full_proj_transform = (self.world_view_transform.unsqueeze(0).bmm(self.projection_matrix.unsqueeze(0))).squeeze(0)
         self.camera_center = self.world_view_transform.inverse()[3, :3]
-
+        # TODO 这里的edge是否可以用于增加udf-branch的采样？？
+        # the edge calculation is adopted from https://github.com/autonomousvision/gaussian-opacity-fields/blob/main/train.py
+        with torch.no_grad():
+            grad_img_left = torch.mean(
+                torch.abs(self.original_image[:, 1:-1, 1:-1] - self.original_image[:, 1:-1, :-2]), 0)
+            grad_img_right = torch.mean(
+                torch.abs(self.original_image[:, 1:-1, 1:-1] - self.original_image[:, 1:-1, 2:]), 0)
+            grad_img_top = torch.mean(torch.abs(self.original_image[:, 1:-1, 1:-1] - self.original_image[:, :-2, 1:-1]),
+                                      0)
+            grad_img_bottom = torch.mean(
+                torch.abs(self.original_image[:, 1:-1, 1:-1] - self.original_image[:, 2:, 1:-1]), 0)
+            max_grad = \
+            torch.max(torch.stack([grad_img_left, grad_img_right, grad_img_top, grad_img_bottom], dim=-1), dim=-1)[0]
+            # pad
+            max_grad = torch.exp(-max_grad)
+            max_grad = torch.nn.functional.pad(max_grad, (1, 1, 1, 1), mode="constant", value=0)
+            self.edge = max_grad
 class MiniCam:
     def __init__(self, width, height, fovy, fovx, znear, zfar, world_view_transform, full_proj_transform):
         self.image_width = width

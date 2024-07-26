@@ -14,6 +14,7 @@ import math
 from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
 from gsBranch.scene.gaussian_model import GaussianModel
 from gsBranch.utils.sh_utils import eval_sh
+from diff_gaussian_rasterization_rade import GaussianRasterizationSettings_rade, GaussianRasterizer_rade
 
 # 这一段就是计算2D平面上的样子
 def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None):
@@ -180,8 +181,8 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
 #             "depth_distortion": depth_distortion,
 #             }
 
-def render_rade_toonew(viewpoint_camera, pc: GaussianModel, pipe, bg_color: torch.Tensor, kernel_size, scaling_modifier=1.0,
-           geo_reg: bool = True, require_depth: bool = True):
+def render_rade(viewpoint_camera, pc: GaussianModel, pipe, bg_color: torch.Tensor, kernel_size, scaling_modifier=1.0,
+                geo_reg: bool = True, require_depth: bool = True):
     """
     Render the scene.
 
@@ -197,7 +198,7 @@ def render_rade_toonew(viewpoint_camera, pc: GaussianModel, pipe, bg_color: torc
     except:
         pass
 
-    raster_settings = GaussianRasterizationSettings(
+    raster_settings = GaussianRasterizationSettings_rade(
         image_height=int(viewpoint_camera.image_height),
         image_width=int(viewpoint_camera.image_width),
         tanfovx=tanfovx,
@@ -215,7 +216,8 @@ def render_rade_toonew(viewpoint_camera, pc: GaussianModel, pipe, bg_color: torc
         debug=pipe.debug
     )
 
-    rasterizer = GaussianRasterizer(raster_settings=raster_settings)
+
+    rasterizer = GaussianRasterizer_rade(raster_settings=raster_settings)
 
     means3D = pc.get_xyz
     means2D = screenspace_points
@@ -242,6 +244,8 @@ def render_rade_toonew(viewpoint_camera, pc: GaussianModel, pipe, bg_color: torc
         scales=scales,
         rotations=rotations,
         cov3D_precomp=cov3D_precomp)
+
+
 
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.

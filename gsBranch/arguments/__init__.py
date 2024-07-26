@@ -66,6 +66,10 @@ class ModelParams(ParamGroup):
         self._white_background = False
         self.data_device = "cuda"
         self.eval = False
+        # 接下来还有一些RaDe-GS相关的参数
+        self.use_decoupled_appearance = False
+        self.disable_filter3D = False
+        self.kernel_size = 0.0
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):
@@ -105,6 +109,12 @@ class OptimizationParams(ParamGroup):
         self.densify_until_iter = 15_000
         self.densify_grad_threshold = 0.0002
         self.random_background = False
+        # 一些RaDe-GS相关参数
+        self.appearance_embeddings_lr = 0.001
+        self.appearance_network_lr = 0.001
+        self.lambda_distortion = 100
+        self.lambda_depth_normal = 0.05
+        self.regularization_from_iter = 15_000
         super().__init__(parser, "Optimization Parameters")
 
 def get_combined_args(parser : ArgumentParser):

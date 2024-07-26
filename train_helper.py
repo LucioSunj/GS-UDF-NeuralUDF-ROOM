@@ -363,14 +363,15 @@ class TrainHelper:
         self,
         iteration,
         gaussians,
-        image_perm
+        image_perm,
+            dataset,
+            opt,
+            pipe,
+            debug_from,
+            scene,
+            background
     ):
-        '''
 
-        :param iteration:
-        :param gaussians:
-        :return:
-        '''
         # TODO
 
         """
@@ -424,6 +425,16 @@ class TrainHelper:
 
         # 提取射线的起点、方向、真实RGB值和mask
         rays_o, rays_d, true_rgb, mask = data[:, :3], data[:, 3: 6], data[:, 6: 9], data[:, 9: 10]
+
+        # TODO 通过 gs_process_rade 来得到深度图，从而优化射线的裁剪范围
+        # 但首先我们需要得到image_name才能调用这个函数，我们需要知道当前udf是要用哪张图片进行渲染
+        # TODO 或许我们可以完全使用这样的方式来得到射线的采样区间？？
+
+        image_name = None
+
+        rendered = self.runner.gs_process_rade(dataset,opt,pipe,debug_from,scene,background,image_name)
+
+        depth = rendered['middepth']
 
         # 计算射线的近远裁剪距离
         near, far = self.runner.udf_dataset.near_far_from_sphere(rays_o, rays_d)
