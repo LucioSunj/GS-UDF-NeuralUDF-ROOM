@@ -45,7 +45,7 @@ class Dataset:
         self.conf = conf
         self.dataset_name = self.conf.get_string('dataset_name', default='dtu')
 
-        # self.data_type = self.conf.get_string('data_type', default='dtu')  # dtu or bmvs
+        self.data_type = self.conf.get_string('data_type', default='dtu')  # dtu or bmvs
 
         self.data_dir = conf.get_string('data_dir')
         self.render_cameras_name = conf.get_string('render_cameras_name')
@@ -61,11 +61,15 @@ class Dataset:
         if self.dataset_name == 'dtu' or self.dataset_name == 'deepfashion3d':
             self.images_lis = sorted(glob(os.path.join(self.data_dir, 'images/*.png')))
             self.masks_lis = sorted(glob(os.path.join(self.data_dir, 'mask/*.png')))
+            if len(self.images_lis) == 0:
+                self.images_lis = sorted(glob(os.path.join(self.data_dir, 'images/*.jpg')))
+            if len(self.masks_lis) == 0:
+                self.masks_lis = sorted(glob(os.path.join(self.data_dir, 'mask/*.jpg')))
         elif self.dataset_name == 'bmvs':
             self.images_lis = sorted(glob(os.path.join(self.data_dir, 'blended_images/*.jpg')))
-            self.masks_lis = sorted(glob(os.path.join(self.data_dir, 'masks/*.jpg')))
+            self.masks_lis = sorted(glob(os.path.join(self.data_dir, 'mask/*.jpg')))
         self.n_images = len(self.images_lis)
-        print(self.n_images)
+        print("n_images=",self.n_images)
         self.images_np = np.stack([cv.imread(im_name) for im_name in self.images_lis]) / 256.0
         self.masks_np = np.stack([cv.imread(im_name) for im_name in self.masks_lis]) / 256.0
 
@@ -88,7 +92,7 @@ class Dataset:
 
             self.intrinsics_all.append(torch.from_numpy(intrinsics).float())
             self.pose_all.append(torch.from_numpy(pose).float())
-
+        # torch.cuda.empty_cache()
         self.images = torch.from_numpy(self.images_np.astype(np.float32)).cuda()  # [n_images, H, W, 3]
         self.masks = torch.from_numpy(self.masks_np.astype(np.float32)).cuda()  # [n_images, H, W, 3]
         self.intrinsics_all = torch.stack(self.intrinsics_all).to(self.device)  # [n_images, 4, 4]
@@ -96,7 +100,7 @@ class Dataset:
         self.focal = self.intrinsics_all[0][0, 0]
         self.pose_all = torch.stack(self.pose_all).to(self.device)  # [n_images, 4, 4]
 
-        # rescale images and masks
+        # rescale images and mask
         if self.downsample_factor != 1:
             self.images = F.interpolate(self.images.permute(0, 3, 1, 2).contiguous(), size=None,
                                         scale_factor=self.downsample_factor,
@@ -140,6 +144,7 @@ class Dataset:
 
     def get_ref_src_info(self, img_idx, num=8):
         if isinstance(img_idx, torch.Tensor):
+            # img_idx 是一个仅包含image的index的tensor
             img_idx = img_idx.cpu().numpy().item()
         src_idx = self.ref_src_pair[img_idx][:num]
         ref_c2w = self.pose_all[img_idx]
@@ -290,7 +295,7 @@ class Dataset:
             patch_color = patch_color.permute(1, 2, 0).contiguous().cuda()
             patch_mask = patch_mask.view(-1, 1).cuda()
 
-        # Normalize pixel coordinates to [-1, 1] range
+        # Normalize pixel coordinates to [-1, 1] range 视口变换
         ndc_u = 2 * pixels_x / (self.W - 1) - 1
         ndc_v = 2 * pixels_y / (self.H - 1) - 1
         rays_ndc_uv = torch.stack([ndc_u, ndc_v], dim=-1).view(-1, 2).float()

@@ -274,7 +274,7 @@ TODO
 
 class TrainHelper:
 
-    def __init__(self, args, runner,ply):
+    def __init__(self, args, runner,ply=None):
         self.args = args
         self.runner = runner
         self.ply = ply
@@ -425,19 +425,36 @@ class TrainHelper:
 
         # 提取射线的起点、方向、真实RGB值和mask
         rays_o, rays_d, true_rgb, mask = data[:, :3], data[:, 3: 6], data[:, 6: 9], data[:, 9: 10]
-
         # TODO 通过 gs_process_rade 来得到深度图，从而优化射线的裁剪范围
         # 但首先我们需要得到image_name才能调用这个函数，我们需要知道当前udf是要用哪张图片进行渲染
         # TODO 或许我们可以完全使用这样的方式来得到射线的采样区间？？
 
+        # 我们直接通过img_idx就能得到本次训练所使用的image的index（从0开始）
         image_name = None
-
+        image_name_len = self.args.image_name_len
+        # 需要注意这里加了1，而且这里的image_name的长度需要你进行一定的修改
+        image_name = (img_idx.item() + 1).zfill(image_name_len)
         rendered = self.runner.gs_process_rade(dataset,opt,pipe,debug_from,scene,background,image_name)
 
-        depth = rendered['middepth']
+        depth = rendered['expected_depth']
+        middepth = rendered['median_depth']
+        # TODO 需要拿到对应pixel的depth,根据depth来设置射线的near和far
+        # 现在分辨率是匹配的
+
+        pixels = torch.stack((pixels_x, pixels_y), dim=1) # TODO 检查这里是不是放反了
+
+        middepth_per_pixel = middepth[pixels[:, 0], pixels[:, 1]]
+        depth_per_pixel = depth[pixels[:, 0], pixels[:, 1]] # [pixel_x,pixel_y]
+
+
 
         # 计算射线的近远裁剪距离
-        near, far = self.runner.udf_dataset.near_far_from_sphere(rays_o, rays_d)
+        # near, far = self.runner.udf_dataset.near_far_from_sphere(rays_o, rays_d)
+
+        # TODO 这里应该修改成利用深度图来对每个rays裁剪距离
+        udf_per_pixels = self.runner.compute_udf_batch(rays_o + rays_d * middepth_per_pixel) # 这里是根据GSDF的(5)来进行的计算
+
+        near, far = self.near_far_from_depth_and_udf(rays_o, rays_d,middepth_per_pixel,depth_per_pixel,udf_per_pixels)
 
         # 将遮罩转换为浮点格式
         mask = (mask > 0.5).float()
@@ -604,6 +621,35 @@ class TrainHelper:
 
         if self.runner.udf_iter_step % len(image_perm) == 0:
             image_perm = torch.randperm(self.runner.udf_dataset.n_images)
+
+    def near_far_from_depth_and_udf(self, rays_o, rays_d,median_depth_per_pixels,depth_per_pixels, udf):
+        # TODO 修改成根据depth和udf计算near与far的function
+        """
+
+        参数:
+        rays_o: 射线的起点，形状为 (..., 3) 的张量。
+        rays_d: 射线的方向，形状为 (..., 3) 的张量。
+
+        返回值:
+        near: 射线与单位球体的最近交点参数 t，形状与 rays_o 相同。
+        far: 射线与单位球体的最远交点参数 t，形状与 rays_o 相同。
+        """
+        # # 计算射线方向的平方和，并保持形状一致
+        # a = torch.sum(rays_d ** 2, dim=-1, keepdim=True)
+        #
+        # # 计算射线起点与方向的点积的两倍
+        # b = 2.0 * torch.sum(rays_o * rays_d, dim=-1, keepdim=True)
+        #
+        # # 计算交点参数 t 的中间值
+        # mid = 0.5 * (-b) / a
+
+        # 计算最近交点参数 t
+        near = rays_o + (median_depth_per_pixels - udf * self.args.udf_guide_gs_gamma) * rays_d
+
+        # 计算最远交点参数 t
+        far = rays_o + (median_depth_per_pixels + udf * self.args.udf_guide_gs_gamma) * rays_d
+
+        return near, far
 
 # 这个class用于Global Densification
 class PointCloudProcessor:

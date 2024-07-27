@@ -27,7 +27,7 @@ class Camera(nn.Module):
         self.T = T
         self.FoVx = FoVx
         self.FoVy = FoVy
-        self.image_name = image_name # image_name是啥？？
+        self.image_name = image_name # image_name是不包含文件后缀的图片文件名
 
         try:
             self.data_device = torch.device(data_device)

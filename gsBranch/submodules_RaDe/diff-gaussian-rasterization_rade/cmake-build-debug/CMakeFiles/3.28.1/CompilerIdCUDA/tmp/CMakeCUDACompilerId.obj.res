@@ -1,0 +1,1 @@
+-D__CUDA_ARCH__=520 -D__CUDA_ARCH_LIST__=520 -nologo -c -TP  -DCUDA_DOUBLE_MATH_FUNCTIONS -EHsc "-IE:/envs/Cuda 11.8/cuda 11.8/bin/../include"   "E:\Projects\GS-NeuralUDF-room\gsBranch\submodules_RaDe\diff-gaussian-rasterization_rade\cmake-build-debug\CMakeFiles\3.28.1\CompilerIdCUDA\tmp\CMakeCUDACompilerId.cudafe1.cpp" 

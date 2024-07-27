@@ -62,7 +62,7 @@ class ModelParams(ParamGroup):
         self._model_path = ""
         self._images = "images"
         # self._resolution = -1
-        self._GSresolution = -1
+        self._GSresolution = 1 # 这里我们直接保证了不会进行缩放
         self._white_background = False
         self.data_device = "cuda"
         self.eval = False

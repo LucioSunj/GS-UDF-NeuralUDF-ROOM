@@ -113,6 +113,25 @@ class SDFNetwork(nn.Module):
 
 
 class UDFNetwork(nn.Module):
+    """
+    UDF网络类，用于构建具有多层感知器（MLP）结构的网络，支持特定的初始化方法和结构配置，如跳跃连接和多分辨率嵌入
+
+    参数:
+    - d_in: 输入维度。
+    - d_out: 输出维度。
+    - d_hidden: 隐藏层的维度。
+    - n_layers: 网络的层数。
+    - skip_in: 指定哪些层启用跳跃连接，默认为(4,).
+    - multires: 多分辨率嵌入的级别，0表示不使用，默认为0。
+    - scale: 用于初始化的缩放因子，默认为1。
+    - bias: 初始化偏置的值，默认为0.5。
+    - geometric_init: 是否使用几何初始化，默认为True。
+    - weight_norm: 是否使用权重规范，默认为True。
+    - udf_type: 用户定义函数（UDF）的类型，默认为'abs'。
+    - udf_shift: UDF的平移参数，默认为0。
+    - predict_grad: 是否预测梯度，默认为False。
+    """
+
     def __init__(self,
                  d_in,
                  d_out,
@@ -130,23 +149,24 @@ class UDFNetwork(nn.Module):
                  ):
         super(UDFNetwork, self).__init__()
 
+        # 定义网络的维度
         dims = [d_in] + [d_hidden for _ in range(n_layers)] + [d_out]
 
-        self.embed_fn_fine = None
-
+        # 初始化多分辨率嵌入
         if multires > 0:
             embed_fn, input_ch = get_embedder(multires, input_dims=d_in)
             self.embed_fn_fine = embed_fn
             dims[0] = input_ch
 
+        # 网络层数和跳跃连接的配置
         self.num_layers = len(dims)
         self.skip_in = skip_in
         self.scale = scale
 
+        # 初始化参数
         self.geometric_init = geometric_init
 
-        # self.bias = 0.5
-        # bias = self.bias
+        # 遍历每一层，初始化线性变换
         for l in range(0, self.num_layers - 1):
             if l + 1 in self.skip_in:
                 out_dim = dims[l + 1] - dims[0]
@@ -155,30 +175,36 @@ class UDFNetwork(nn.Module):
 
             lin = nn.Linear(dims[l], out_dim)
 
+            # 根据配置进行几何初始化
             if geometric_init:
                 print("using geometric init")
                 if l == self.num_layers - 2:
-
+                    # 最后一层的特殊初始化
                     torch.nn.init.normal_(lin.weight, mean=np.sqrt(np.pi) / np.sqrt(dims[l]), std=0.0001)
                     torch.nn.init.constant_(lin.bias, -bias)
-
                 elif multires > 0 and l == 0:
+                    # 多分辨率嵌入的输入层初始化
                     torch.nn.init.constant_(lin.bias, 0.0)
                     torch.nn.init.constant_(lin.weight[:, 3:], 0.0)
                     torch.nn.init.normal_(lin.weight[:, :3], 0.0, np.sqrt(2) / np.sqrt(out_dim))
                 elif multires > 0 and l in self.skip_in:
+                    # 跳跃连接层的初始化
                     torch.nn.init.constant_(lin.bias, 0.0)
                     torch.nn.init.normal_(lin.weight, 0.0, np.sqrt(2) / np.sqrt(out_dim))
                     torch.nn.init.constant_(lin.weight[:, -(dims[0] - 3):], 0.0)
                 else:
+                    # 其他层的初始化
                     torch.nn.init.constant_(lin.bias, 0.0)
                     torch.nn.init.normal_(lin.weight, 0.0, np.sqrt(2) / np.sqrt(out_dim))
 
+            # 应用权重规范
             if weight_norm:
                 lin = nn.utils.weight_norm(lin)
 
+            # 设置层属性
             setattr(self, "lin" + str(l), lin)
 
+        # 激活函数的选择
         self.activation = nn.Softplus(beta=100)
         self.relu = nn.ReLU()
         self.udf_type = udf_type
@@ -666,17 +692,38 @@ class BetaNetwork(nn.Module):
                  requires_grad_beta=True,
                  requires_grad_gamma=True,
                  requires_grad_zeta=True):
+        """
+        初始化BetaGammaZeta类的实例。
+
+        这个类用于封装在某些深度学习模型中可能会用到的beta, gamma, zeta参数，
+        并提供它们的参数化和梯度计算能力。
+
+        参数:
+        - init_var_beta: Beta参数的初始值，默认为0.1。
+        - init_var_gamma: Gamma参数的初始值，默认为0.1。
+        - init_var_zeta: Zeta参数的初始值，默认为0.05。
+        - beta_min: Beta参数的最小值限制，默认为0.00005，用于防止Beta值过小。
+        - requires_grad_beta: 指示Beta参数是否需要计算梯度，默认为True。
+        - requires_grad_gamma: 指示Gamma参数是否需要计算梯度，默认为True。
+        - requires_grad_zeta: 指示Zeta参数是否需要计算梯度，默认为True。
+        """
         super().__init__()
 
+        # 初始化Beta参数，作为一个需要梯度更新的参数。
         self.beta = nn.Parameter(torch.Tensor([init_var_beta]), requires_grad=requires_grad_beta)
+        # 初始化Gamma参数，作为一个需要梯度更新的参数。
         self.gamma = nn.Parameter(torch.Tensor([init_var_gamma]), requires_grad=requires_grad_gamma)
+        # 初始化Zeta参数，作为一个需要梯度更新的参数。
         self.zeta = nn.Parameter(torch.Tensor([init_var_zeta]), requires_grad=requires_grad_zeta)
+        # 设置Beta参数的最小值限制。
         self.beta_min = beta_min
 
     def get_beta(self):
+        # 返回beta参数的变换值，使用指数函数和缩放因子，通过clip函数限制在合理范围内
         return torch.exp(self.beta * 10).clip(0, 1./self.beta_min)
 
     def get_gamma(self):
+        # 返回gamma参数的变换值，使用指数函数和缩放因子
         return torch.exp(self.gamma * 10)
 
     def get_zeta(self):
@@ -685,6 +732,7 @@ class BetaNetwork(nn.Module):
         :return:
         :rtype:
         """
+        # 返回zeta参数的绝对值，确保非负
         return self.zeta.abs()
 
     def set_beta_trainable(self):
