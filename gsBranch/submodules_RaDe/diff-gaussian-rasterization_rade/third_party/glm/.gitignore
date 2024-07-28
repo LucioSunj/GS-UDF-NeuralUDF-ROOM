@@ -40,7 +40,7 @@ install_manifest.txt
 # Test logs
 Testing/*
 
-# Test images
+# Test input
 test/gtc/*.dds
 
 # Project Files

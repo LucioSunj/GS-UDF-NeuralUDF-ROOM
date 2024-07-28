@@ -1,5 +1,0 @@
-ToolSet: 17.0 (local)@E:\VS\Visual Studio
-Ninja: 1.12.0@E:\CLion 2023.2.2\bin\ninja\win\x64\ninja.exe
-Options: msvc.arch=amd64
-
-Options:-DCMAKE_MAKE_PROGRAM=E:/CLion 2023.2.2/bin/ninja/win/x64/ninja.exe

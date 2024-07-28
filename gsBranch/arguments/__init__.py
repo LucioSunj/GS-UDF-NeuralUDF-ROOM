@@ -67,9 +67,11 @@ class ModelParams(ParamGroup):
         self.data_device = "cuda"
         self.eval = False
         # 接下来还有一些RaDe-GS相关的参数
+        self._dataset = ""
         self.use_decoupled_appearance = False
         self.disable_filter3D = False
-        self.kernel_size = 0.0
+        self.kernel_size = 0.0 # Size of 2D filter in mip-splatting
+        self.use_coord_map = False
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):

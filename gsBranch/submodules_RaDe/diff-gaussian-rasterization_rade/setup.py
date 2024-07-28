@@ -16,7 +16,7 @@ os.path.dirname(os.path.abspath(__file__))
 
 setup(
     name="diff_gaussian_rasterization_rade",
-    packages=['diff_gaussian_rasterization_rade'],
+    packages=['diff_gaussian_rasterization'],
     ext_modules=[
         CUDAExtension(
             name="diff_gaussian_rasterization_rade._C", # 这里需要注意，我们修改了名字，因此当需要使用RaDe-GS的cuda函数的时候应该导这个包
