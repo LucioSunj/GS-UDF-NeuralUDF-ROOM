@@ -503,7 +503,19 @@ class TrainHelper:
         mask_sum = mask.sum() + 1e-5
 
         # 使用渲染器渲染图像
-        render_out = self.runner.udf_renderer.render(rays_o, rays_d, near, far,
+
+        # TODO 似乎用了Gaussian之后我们就不应该再用UDF的上采样方法了
+        # render_out = self.runner.udf_renderer.render(rays_o, rays_d, near, far,
+        #                                   flip_saturation=self.runner.udf_get_flip_saturation(),
+        #                                   color_maps=src_images if color_pixel_weight > 0. else None,
+        #                                   w2cs=src_w2cs,
+        #                                   intrinsics=src_intrinsics,
+        #                                   query_c2w=ref_c2w,
+        #                                   img_index=None,
+        #                                   rays_uv=rays_uv if color_patch_weight > 0 else None,
+        #                                   cos_anneal_ratio=self.runner.udf_get_cos_anneal_ratio())
+
+        render_out = self.runner.udf_renderer.render_with_gs(rays_o, rays_d, near, far,
                                           flip_saturation=self.runner.udf_get_flip_saturation(),
                                           color_maps=src_images if color_pixel_weight > 0. else None,
                                           w2cs=src_w2cs,
@@ -685,10 +697,66 @@ class TrainHelper:
 
         # 计算最近交点参数 t
 
+        # 我们对rays_o和rays_d计算的时候，都只需要计算其z轴也就是dim=-1的这个维度的值，因为我们只是在讨论z方向上的变化
+
+        # near = rays_o + (median_depth_per_pixels - udf.unsqueeze(1) * self.args.udf_guide_gs_gamma) * rays_d
+
+        # TODO 确定一下是哪一种计算方式
+        # # 1.
+        # # Adjust rays_o and rays_d to sum along the last dimension and keep the dimension
+        # rays_o_sum = rays_o.sum(dim=-1, keepdim=True)  # [512, 1]
+        # rays_d_sum = rays_d.sum(dim=-1, keepdim=True)  # [512, 1]
+        #
+        # # Unsqueeze udf to match the dimensions of median_depth_per_pixels
+        # udf_unsqueezed = udf.unsqueeze(1)  # [512, 1]
+        #
+        # # Calculate the intermediate term (median_depth_per_pixels - udf_unsqueezed * gamma)
+        # depth_term = median_depth_per_pixels - udf_unsqueezed * self.args.udf_guide_gs_gamma  # [512, 1]
+        #
+        # # Final calculation which focuses on summed dimensions of rays_o and rays_d
+        # near = rays_o_sum - depth_term * rays_d_sum  # [512, 1]
+
+        # 方法2：
         near = rays_o + (median_depth_per_pixels - udf.unsqueeze(1) * self.args.udf_guide_gs_gamma) * rays_d
+        near = near.sum(dim=-1, keepdim=True)
+
+        # # 方法3:
+        # rays_o_z = rays_o[:,2].unsqueeze(1)
+        # rays_d_z = rays_d[:,2].unsqueeze(1)
+        #
+        # # Unsqueeze udf to match the dimensions of median_depth_per_pixels
+        # udf_unsqueezed = udf.unsqueeze(1)  # [512, 1]
+        #
+        # # Calculate the intermediate term (median_depth_per_pixels - udf_unsqueezed * gamma)
+        # depth_term = median_depth_per_pixels - udf_unsqueezed * self.args.udf_guide_gs_gamma  # [512, 1]
+        #
+        # # Final calculation which focuses on summed dimensions of rays_o and rays_d
+        # near = rays_o_z - depth_term * rays_d_z  # [512, 1]
+
 
         # 计算最远交点参数 t
+        # far = rays_o + (median_depth_per_pixels + udf.unsqueeze(1) * self.args.udf_guide_gs_gamma) * rays_d
+        # 方法1
+
+        # # Unsqueeze udf to match the dimensions of median_depth_per_pixels
+        # udf_unsqueezed = udf.unsqueeze(1)  # [512, 1]
+        #
+        # # Calculate the intermediate term (median_depth_per_pixels - udf_unsqueezed * gamma)
+        # depth_term = median_depth_per_pixels - udf_unsqueezed * self.args.udf_guide_gs_gamma  # [512, 1]
+        #
+        # # Final calculation which focuses on summed dimensions of rays_o and rays_d
+        # far = rays_o_sum + depth_term * rays_d_sum  # [512, 1]
+
+        # 方法2：
         far = rays_o + (median_depth_per_pixels + udf.unsqueeze(1) * self.args.udf_guide_gs_gamma) * rays_d
+        far = far.sum(dim=-1, keepdim=True)
+
+        # # 方法3:
+        # udf_unsqueezed = udf.unsqueeze(1)  # [512, 1]
+        #
+        # depth_term = median_depth_per_pixels - udf_unsqueezed * self.args.udf_guide_gs_gamma  # [512, 1]
+        #
+        # far = rays_o_z + depth_term * rays_d_z  # [512, 1]
 
         return near, far
 
