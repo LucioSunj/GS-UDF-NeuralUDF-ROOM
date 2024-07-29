@@ -301,9 +301,11 @@ class TrainHelper:
         cubic_grid = self.devide_space_into_cubes()
 
         # TODO 这里或许可以通过改变compute_udf变成批量计算udf值，然后批量执行操作
-        for point, point_count in cubic_grid:
+        # for point, point_count in cubic_grid:
+        for point, point_count in cubic_grid.items():
             # 计算每个cube的中心点处的UDF值
-            point = np.array(point)
+            # point = np.array(point)
+            point = torch.tensor(point, dtype=torch.float32)
             udf = self.runner.compute_udf(point)
             # 以这个中心点作为Threshold的判断条件
             if udf < self.args.threshold_u:
@@ -331,8 +333,8 @@ class TrainHelper:
         # self.ply = "output/ggbond/point_cloud/iteration_7000/point_cloud.ply"
         self.processor = PointCloudProcessor(self.ply)
         self.pcd = self.processor.point_cloud
-        self.processor.create_cubic_grid()
-        cubic_grid = self.processor.cubic_grid
+        cubic_grid = self.processor.create_cubic_grid()
+        # cubic_grid = self.processor.cubic_grid
         # self.ply = ply
         # self.pcd = processor.load_ply(ply)
         return cubic_grid
@@ -354,7 +356,7 @@ class TrainHelper:
         # TODO 利用下文的Gaussian Processor类来进行操作
         # Example usage:
         udf_renderer = runner.udf_renderer  # Initialize your UDF renderer here
-        processor = GaussianProcessor(udf_renderer,gaussians,self)
+        processor = GaussianProcessor(runner,gaussians,self)
         pcd = load_ply(self.ply)
 
         processor.process_gaussians(pcd, self.args.lambda_sigma, self.args.threshold_p, self.args.threshold_d)
@@ -401,7 +403,7 @@ class TrainHelper:
         # 也就是每次训练只取一个图像
         img_idx = image_perm[self.runner.udf_iter_step % len(image_perm)]
         # 随机获取一些随机射线和对应的Ground truth用于训练
-        sample = self.runner.udf_dataset.runner.gen_random_rays_patches_at_return_pixels(
+        sample = self.runner.udf_dataset.gen_random_rays_patches_at_return_pixels(
             img_idx, self.runner.batch_size,
             crop_patch=color_patch_weight > 0.0, h_patch_size=self.runner.udf_color_loss_func.h_patch_size)
 
@@ -415,43 +417,81 @@ class TrainHelper:
 
         # 根据颜色像素权重和颜色块权重决定是否加载参考和源图像信息
         if color_pixel_weight > 0. or color_patch_weight > 0.:
-            # todo: this load is very slow
+
             ref_c2w, src_c2ws, src_intrinsics, src_images, img_wh = self.runner.udf_dataset.get_ref_src_info(img_idx)
             src_w2cs = torch.inverse(src_c2ws)
         else:
             ref_c2w, src_c2ws, src_w2cs, src_intrinsics, src_images = None, None, None, None, None
 
-        # todo load supporting images
+
 
         # 提取射线的起点、方向、真实RGB值和mask
         rays_o, rays_d, true_rgb, mask = data[:, :3], data[:, 3: 6], data[:, 6: 9], data[:, 9: 10]
-        # TODO 通过 gs_process_rade 来得到深度图，从而优化射线的裁剪范围
+        # 通过 gs_process_rade 来得到深度图，从而优化射线的裁剪范围
         # 但首先我们需要得到image_name才能调用这个函数，我们需要知道当前udf是要用哪张图片进行渲染
-        # TODO 或许我们可以完全使用这样的方式来得到射线的采样区间？？
+
 
         # 我们直接通过img_idx就能得到本次训练所使用的image的index（从0开始）
         image_name = None
         image_name_len = self.args.image_name_len
         # 需要注意这里加了1，而且这里的image_name的长度需要你进行一定的修改
-        image_name = (img_idx.item() + 1).zfill(image_name_len)
-        rendered = self.runner.gs_process_rade(dataset,opt,pipe,debug_from,scene,background,image_name)
+
+        # TODO 这里需要进行修改，不能是这样的硬编码
+        def create_mapping():
+            # Define the image name ranges
+            ranges = [(1, 76), (126, 141)]
+
+            # Initialize the index counter
+            index = 1
+
+            # Create a mapping dictionary
+            index_to_image_name = {}
+
+            # Populate the dictionary with the ranges
+            for start, end in ranges:
+                for i in range(start, end + 1):
+                    image_name = f'{i:04}'
+                    index_to_image_name[index] = image_name
+                    index += 1
+
+            return index_to_image_name
+
+        index_to_image_name = create_mapping()
+        index = img_idx.item() + 1
+        # image_name = str(img_idx.item() + 1).zfill(image_name_len)
+        image_name = index_to_image_name[index].zfill(image_name_len)
+
+        rendered = self.runner.gs_process_rade(dataset=dataset,opt=opt,pipe=pipe,gaussians=gaussians,debug_from=debug_from,scene=scene,background=background,iteration=iteration,image_name=image_name)
 
         depth = rendered['expected_depth']
         middepth = rendered['median_depth']
         # TODO 需要拿到对应pixel的depth,根据depth来设置射线的near和far
         # 现在分辨率是匹配的
 
-        pixels = torch.stack((pixels_x, pixels_y), dim=1) # TODO 检查这里是不是放反了
+        pixels = torch.stack((pixels_x, pixels_y), dim=1)
+        # print("pixels",pixels)
+        # print("pixels shape",pixels.shape)
+        # print("middepth",middepth)
+        print("middepth shape",middepth.shape)
+        middepth_per_pixel = middepth[0,pixels[:, 1], pixels[:, 0]]
+        print("middepth_per_pixel shape",middepth_per_pixel.shape)
+        middepth_per_pixel = middepth_per_pixel.unsqueeze(1)
+        print("middepth_per_pixel shape",middepth_per_pixel.shape)
 
-        middepth_per_pixel = middepth[pixels[:, 0], pixels[:, 1]]
-        depth_per_pixel = depth[pixels[:, 0], pixels[:, 1]] # [pixel_x,pixel_y]
+        # print("middepth_per_pixel",middepth_per_pixel)
+        # print("middepth_per_pixel shape",middepth_per_pixel.shape)
+        # depth_per_pixel = depth[pixels[:, 0], pixels[:, 1]] # [pixel_x,pixel_y]
 
-
+        depth_per_pixel = None
 
         # 计算射线的近远裁剪距离
         # near, far = self.runner.udf_dataset.near_far_from_sphere(rays_o, rays_d)
 
-        # TODO 这里应该修改成利用深度图来对每个rays裁剪距离
+        # 利用深度图来对每个rays裁剪距离
+        print("rays_o",rays_o.shape)
+        print("rays_d",rays_d.shape)
+        print("middepth_per_pixel",middepth_per_pixel.shape)
+        # TODO middepth_per_pixel 应该形状是 （512，1）才对啊
         udf_per_pixels = self.runner.compute_udf_batch(rays_o + rays_d * middepth_per_pixel) # 这里是根据GSDF的(5)来进行的计算
 
         near, far = self.near_far_from_depth_and_udf(rays_o, rays_d,middepth_per_pixel,depth_per_pixel,udf_per_pixels)
@@ -644,10 +684,11 @@ class TrainHelper:
         # mid = 0.5 * (-b) / a
 
         # 计算最近交点参数 t
-        near = rays_o + (median_depth_per_pixels - udf * self.args.udf_guide_gs_gamma) * rays_d
+
+        near = rays_o + (median_depth_per_pixels - udf.unsqueeze(1) * self.args.udf_guide_gs_gamma) * rays_d
 
         # 计算最远交点参数 t
-        far = rays_o + (median_depth_per_pixels + udf * self.args.udf_guide_gs_gamma) * rays_d
+        far = rays_o + (median_depth_per_pixels + udf.unsqueeze(1) * self.args.udf_guide_gs_gamma) * rays_d
 
         return near, far
 
@@ -746,7 +787,7 @@ class PointCloudProcessor:
 
 # 这是用于UDF-guide-GS densificaiton & pruning的类与函数
 class GaussianProcessor:
-    def __init__(self, runner, gaussians, train_helper, batch_size=10000):
+    def __init__(self, runner, gaussians, train_helper, batch_size=1000):
         self.runner = runner
         self.gaussians = gaussians
         self.train_helper = train_helper
@@ -778,15 +819,15 @@ class GaussianProcessor:
             start_idx = i * self.batch_size
             end_idx = min((i + 1) * self.batch_size, num_points)
             batch_centers = xyz[start_idx:end_idx]
-            batch_opacities = opacities[start_idx:end_idx]
-
+            # batch_opacities = opacities[start_idx:end_idx]
+            batch_opacities = opacities[start_idx:end_idx].squeeze()
             # 批量计算 UDF 值
             batch_udfs = self.runner.compute_udf_batch(batch_centers)
 
             # 计算 eta
             batch_etas = torch.exp(-batch_udfs ** 2 / (lambda_sigma * batch_opacities ** 2))
             etas.append(batch_etas)
-
+            print(f"Batch {i + 1}/{num_batches}: batch_etas shape = {batch_etas.shape}")
         etas = torch.cat(etas, dim=0)
 
         prune_mask = etas < tau_p
