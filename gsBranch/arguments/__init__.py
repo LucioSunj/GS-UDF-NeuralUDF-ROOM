@@ -59,7 +59,8 @@ class ModelParams(ParamGroup):
     def __init__(self, parser, sentinel=False):
         self.sh_degree = 3
         self._source_path = ""
-        self._model_path = ""
+        # self._model_path = ""
+        self._model_path = "./output"
         self._images = "images"
         # self._resolution = -1
         self._GSresolution = 1 # 这里我们直接保证了不会进行缩放

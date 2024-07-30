@@ -11,7 +11,7 @@ from sklearn.neighbors import NearestNeighbors
 from termcolor import colored
 from icecream import ic
 import torch.nn.functional as F
-
+from gsBranch.utils.general_utils import build_rotation
 # class PointCloudProcessor:
 #
 #     def voxelize_sample(self, data=None, voxel_size=1):
@@ -278,6 +278,7 @@ class TrainHelper:
         self.args = args
         self.runner = runner
         self.ply = ply
+
     def udf_guide_gs_global_densification(
         self,
         iteration=7000,
@@ -876,7 +877,7 @@ class GaussianProcessor:
         xyz = pcd['xyz']
         # TODO 若这里梯度shape不对的话，可以看看 densify_and_split函数中计算梯度的方式
         grads = self.gaussians.xyz_gradient_accum / self.gaussians.denom
-        grads[grads.isnan()] = 0.0  # 将nan的梯度设置成0
+        grads[grads.isnan()] = 0.0  # 将nan的梯度设置成 0
 
         num_points = xyz.shape[0]
         num_batches = (num_points + self.batch_size - 1) // self.batch_size
@@ -899,17 +900,31 @@ class GaussianProcessor:
         etas = torch.cat(etas, dim=0)
 
         prune_mask = etas < tau_p
+        # 这里densify_mask需要分成两个，一个是clone，一个是split
         densify_mask = torch.logical_and(etas > tau_d, torch.norm(grads, dim=-1) > self.runner.args.threshold_g)
 
         self.densify_and_prune(etas, grads, prune_mask, densify_mask)
+
     def densify_and_prune(self, etas, grads, prune_mask, densify_mask):
+        # Apply densification
+        scene_extent = self.runner.scene.cameras_extent
+        densify_mask_clone = torch.logical_and(densify_mask,
+                                               torch.max(self.gaussians.get_scaling,
+                                                         dim=1).values <= self.gaussians.percent_dense * scene_extent)
+        densify_indices_clone = torch.where(densify_mask_clone)[0]
+        self.densify_points_clone(densify_indices_clone, grads)
+
+        densify_mask_split = torch.logical_and(densify_mask,
+                                               torch.max(self.gaussians.get_scaling,
+                                                         dim=1).values > self.gaussians.percent_dense * scene_extent)
+        densify_indices_split = torch.where(densify_mask_split)[0]
+        self.densify_points_split(densify_indices_split, grads)
+
         # Apply pruning
         prune_indices = torch.where(prune_mask)[0]
         self.prune_points(prune_indices)
 
-        # Apply densification
-        densify_indices = torch.where(densify_mask)[0]
-        self.densify_points(densify_indices, grads)
+
 
     def prune_points(self, indices):
         # Prune the points at the given indices
@@ -917,7 +932,7 @@ class GaussianProcessor:
         # Implement pruning logic here
         self.gaussians.prune_points(indices)
 
-    def densify_points(self, indices, grads):
+    def densify_points_clone(self, indices, grads):
         # Densify the points at the given indices
         # print(f"Densifying points at indices: {indices}")
         # Implement densification logic here
@@ -932,7 +947,26 @@ class GaussianProcessor:
 
         self.gaussians.densification_postfix(new_xyz, new_features_dc,
                                              new_features_rest, new_opacities, new_scaling,new_rotation)
-        # TODO Densification & Split 的逻辑 是否需要呢？
+
+    def densify_points_split(self, indices, grads, N=2):
+        # Densify the points at the given indices
+        stds = self.gaussians.get_scaling[indices].repeat(N, 1)
+        means = torch.zeros((stds.size(0), 3), device="cuda")
+        samples = torch.normal(mean=means, std=stds)
+        rots = build_rotation(self.gaussians._rotation[indices]).repeat(N, 1, 1)
+        new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.gaussians.get_xyz[indices].repeat(N, 1)
+        new_scaling = self.gaussians.scaling_inverse_activation(self.gaussians.get_scaling[indices].repeat(N, 1) / (0.8 * N))
+        new_rotation = self.gaussians._rotation[indices].repeat(N, 1)
+        new_features_dc = self.gaussians._features_dc[indices].repeat(N, 1, 1)
+        new_features_rest = self.gaussians._features_rest[indices].repeat(N, 1, 1)
+        new_opacity = self.gaussians._opacity[indices].repeat(N, 1)
+
+        self.gaussians.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation)
+
+        prune_filter = torch.cat(
+            (indices, torch.zeros(N * indices.sum(), device="cuda", dtype=bool)))
+        self.prune_points(prune_filter)
+
 
 
 def load_ply(path):
