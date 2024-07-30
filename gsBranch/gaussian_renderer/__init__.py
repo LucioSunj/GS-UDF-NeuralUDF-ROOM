@@ -256,7 +256,7 @@ def render_rade(viewpoint_camera, pc: GaussianModel, pipe, bg_color: torch.Tenso
             "expected_depth": rendered_expected_depth,  # 还是得到了深度的
             "median_depth": rendered_median_depth,
             "viewspace_points": means2D,
-            # "visibility_filter": radii > 0,
+            "visibility_filter": radii > 0,# TODO 这个似乎会有问题
             "radii": radii,
             "normal": rendered_normal,
             }
