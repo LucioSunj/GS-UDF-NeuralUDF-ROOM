@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="E:\Projects\GS-NeuralUDF-room\gsBranch\submodules_RaDe\tetra_triangulation\src\triangulation.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\GS-NeuralUDF-room\gsBranch\submodules_RaDe\tetra_triangulation\src\py_binding.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="E:\Projects\GS-NeuralUDF-room\gsBranch\submodules_RaDe\tetra_triangulation\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{3249B037-2E5C-37D7-8CAC-8587F5EC21D0}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

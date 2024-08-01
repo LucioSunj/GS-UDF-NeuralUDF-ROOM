@@ -1,1 +1,0 @@
-Namespace(GSresolution=-1, data_device='cuda', eval=False, images='images', model_path='./output/68cfe62d-5', sh_degree=3, source_path='/root/autodl-tmp/GS-NeuralUDF-room/data/GS-Branch/ggbond', white_background=False)

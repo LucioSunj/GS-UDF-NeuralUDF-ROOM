@@ -440,6 +440,7 @@ class TrainHelper:
         # TODO 这里需要进行修改，不能是这样的硬编码
         def create_mapping():
             # Define the image name ranges
+            # TODO 这里可能对于每个scene都需要重新规定ranges
             ranges = [(1, 76), (126, 141)]
 
             # Initialize the index counter
@@ -460,7 +461,8 @@ class TrainHelper:
         index_to_image_name = create_mapping()
         index = img_idx.item() + 1
         # image_name = str(img_idx.item() + 1).zfill(image_name_len)
-        image_name = index_to_image_name[index].zfill(image_name_len)
+        # image_name = index_to_image_name[index].zfill(image_name_len)
+        image_name = index_to_image_name[index] # scannet 的图片并没有用0填充
 
         rendered = self.runner.gs_process_rade(dataset=dataset,opt=opt,pipe=pipe,gaussians=gaussians,debug_from=debug_from,scene=scene,background=background,iteration=iteration,image_name=image_name)
 

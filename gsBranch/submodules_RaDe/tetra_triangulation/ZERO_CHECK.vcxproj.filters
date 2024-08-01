@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="E:\Projects\GS-NeuralUDF-room\gsBranch\submodules_RaDe\tetra_triangulation\CMakeFiles\19c3ae83aef9453bf26ce8df9a8cebf8\generate.stamp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{0735A2D8-E2A2-3ADB-818F-C9CEB893337C}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

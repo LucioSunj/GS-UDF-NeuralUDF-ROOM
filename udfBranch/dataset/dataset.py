@@ -68,6 +68,10 @@ class Dataset:
         elif self.dataset_name == 'bmvs':
             self.images_lis = sorted(glob(os.path.join(self.data_dir, 'blended_images/*.jpg')))
             self.masks_lis = sorted(glob(os.path.join(self.data_dir, 'mask/*.jpg')))
+            if len(self.images_lis) == 0:
+                self.images_lis = sorted(glob(os.path.join(self.data_dir, 'images/*.png')))
+            if len(self.masks_lis) == 0:
+                self.masks_lis = sorted(glob(os.path.join(self.data_dir, 'mask/*.png')))
         self.n_images = len(self.images_lis)
         print("n_images=",self.n_images)
         self.images_np = np.stack([cv.imread(im_name) for im_name in self.images_lis]) / 256.0
