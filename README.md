@@ -11,7 +11,33 @@ Please DONNOT push the new commit to master branch. We could first push them to 
 
 
 ### 读取、准备数据
+- 将图片通过3dgs的convertor.py的类似方式转换成GS部分可用部分, 然后将这个数据放在 data/GS-Branch/CASE NAME 目录下
+  - （CASE NAME指的是本次数据的命名）
+- 将图片根据 [教程](https://blog.csdn.net/weixin_59961223/article/details/135429437) 转换成最终格式，放在 data/UDF-Branch/CustomData/CASE NAME/n 目录下 
+  - （CASE NAME指的是本次数据的命名）
+  - （n) 指的是数字 case 
 
+- 写udf的.conf 文件放在udfBranch/confs下
+
+  - 首先是一个：模板按照他们的无_ft 的, 需要改的部分：
+
+    - ```
+      base_exp_dir = ./exp/udf/CASE_NAME/n/
+      expname = udf_CASE_NAME
+      model_type = udf
+      recording = [
+        ./udfBranch,
+        ./udfBranch/models,
+        ./udfBranch/dataset,
+      ]
+      ```
+
+    - ```
+      data_dir = data/UDF-Branch/CustomData/CASE_NAME/n/
+      ```
+
+  - 再写一个有ft的：
+    - 要改的内容与上面一样
 #### GS-Branch -> 准备COLMAP数据
 - copied from 3dgs
 Our COLMAP loaders expect the following dataset structure in the source path location:
