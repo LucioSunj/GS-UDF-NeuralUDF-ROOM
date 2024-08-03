@@ -462,7 +462,14 @@ class TrainHelper:
         index = img_idx.item() + 1
         # image_name = str(img_idx.item() + 1).zfill(image_name_len)
         # image_name = index_to_image_name[index].zfill(image_name_len)
-        image_name = index_to_image_name[index] # scannet 的图片并没有用0填充
+
+        # 这里我进行了一定更新，直接传参数就行
+        if image_name_len == -1 :
+            # 这里表示不用0填充名称，如scannet一样
+            image_name = index_to_image_name[index] # scannet 的图片并没有用0填充
+        else:
+            # 这里表示需要按照照片名称长度进行高位补0的操作
+            image_name = index_to_image_name[index].zfill(image_name_len)
 
         rendered = self.runner.gs_process_rade(dataset=dataset,opt=opt,pipe=pipe,gaussians=gaussians,debug_from=debug_from,scene=scene,background=background,iteration=iteration,image_name=image_name)
 
