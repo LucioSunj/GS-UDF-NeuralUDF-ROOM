@@ -4,6 +4,10 @@ Please DONNOT push the new commit to master branch. We could first push them to 
 ---
 # GS-UDFRoom 流程
 
+## 方法框架
+
+![Framework](framework.png)
+
 ## 初始化过程
 
 ### 读取参数配置
@@ -136,3 +140,13 @@ metric3d_vit_small, metric3d_vit_large, metric3d_vit_giant2.
 
 
 ### Backward Propagation
+
+## 实验结果
+
+### 定量结果
+
+![Quantitative Results](quantitive_results.png)
+
+### 定性结果
+
+![Qualitative Results](qualitive_results.png)
