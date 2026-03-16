@@ -6,7 +6,7 @@ Please DONNOT push the new commit to master branch. We could first push them to 
 
 ## 方法框架
 
-![Framework](framework.png)
+![Framework](Framework.png)
 
 ## 初始化过程
 
